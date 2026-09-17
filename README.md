@@ -4,6 +4,44 @@ A Rust-native web crawling and intelligence engine — deterministic crawling fi
 
 Mudfish is not a clone of any existing crawler or scraping product. It is being built from first principles as a wedge across three ideas that are usually separate products: fast async HTTP crawling, developer-facing structured extraction, and automatic API/website intelligence discovery.
 
+## Getting started
+
+Pick whichever fits your stack — both call the same Rust engine.
+
+**Python** (fastest way to try it):
+
+```bash
+pip install mudfish
+```
+
+```python
+import mudfish
+
+result = mudfish.crawl("https://example.com", depth=2, concurrency=30)
+print(result["stats"])
+for page in result["pages"]:
+    print(page["status_code"], page["url"], page["metadata"]["title"])
+```
+
+**Rust CLI** (requires a recent stable Rust toolchain, developed against 1.97):
+
+```bash
+git clone https://github.com/Mullassery/MudFish.git
+cd MudFish
+cargo build --release
+./target/release/mudfish crawl https://example.com --depth 2 --output json
+```
+
+Either way you get the same result shape back: a crawl ID, every page fetched (status, title, meta description, canonical URL, outbound links), any errors, and aggregate stats (URLs discovered/fetched/skipped, bytes, duration).
+
+## Use cases
+
+- **Quick site audit.** `mudfish crawl https://yoursite.com --depth 3 --output json` and get back every reachable page's status code, title, and outbound links — useful for finding broken links, orphaned pages, or checking what a search-engine-style crawler would actually see.
+- **Structured data collection from Python.** `mudfish.crawl(url)` in a notebook or pipeline script, no subprocess/server to manage — the dict comes back ready for `pandas`, a database insert, or a RAG ingestion step.
+- **Safe crawling of untrusted/third-party URLs.** Point it at user-submitted or arbitrary external URLs (e.g. a link-preview service, a content-moderation pipeline) without worrying about SSRF against your own internal network — loopback/private/link-local/cloud-metadata addresses are refused by design, verified via actual DNS resolution rather than a hostname blocklist.
+- **Bounded, budget-safe crawling.** Every crawl has hard limits (`--max-urls`, `--max-duration-secs`, `--max-response-bytes`) so a misconfigured depth or an unexpectedly large site can't run away with your CPU, bandwidth, or bill.
+- **Polite crawling of sites you don't control.** robots.txt is honored by default, with per-host rate limiting and concurrency caps, so you can crawl third-party sites without hammering them or getting IP-banned.
+
 ## Problem
 
 Most crawling tools force a choice: fast-but-shallow link crawlers (recon-oriented), or slow browser-based scrapers that render everything by default. Neither gives you a single, safe, resource-bounded engine that does cheap HTTP crawling by default and only escalates to a browser (or an LLM) when the page actually needs it.
@@ -16,24 +54,7 @@ Mudfish's core principle: **deterministic crawling first, browser rendering only
 
 This repository currently implements **Phase 1 only**: a production-quality asynchronous HTTP crawler, matching the project's own phased build plan (see `ROADMAP_HONEST.md`). Browser rendering, structured/AI extraction, website graphs, and distributed crawling are deliberately not started yet — building those before the HTTP core is solid and benchmarked would violate the project's own first principle.
 
-## Use cases (today)
-
-- Crawl a site over plain HTTP, respecting robots.txt and rate limits, and get back structured JSON/JSONL of every page fetched (title, meta description, canonical URL, outbound links).
-- Map same-domain link structure up to a depth limit, with hard budgets (max URLs, max duration, max response size) so a crawl can never run away.
-- Safely point the crawler at arbitrary third-party URLs without risking SSRF against your own infrastructure (loopback/private/link-local/cloud-metadata addresses are refused by default, verified via actual DNS resolution, not a hostname blocklist).
-
-## Installation
-
-Requires a recent stable Rust toolchain (developed against 1.97).
-
-```bash
-git clone https://github.com/Mullassery/MudFish.git
-cd MudFish
-cargo build --release
-./target/release/mudfish crawl https://example.com --depth 2
-```
-
-## Usage
+## CLI reference
 
 ```bash
 mudfish crawl <URL> [OPTIONS]
@@ -60,24 +81,9 @@ Example:
 mudfish crawl https://example.com --depth 2 --concurrency 30 --output json > crawl.json
 ```
 
-## Python bindings
+## Python reference
 
-The same Rust crawl engine is also available from Python, via a native [PyO3](https://pyo3.rs) extension (no subprocess, no server hop):
-
-```bash
-pip install mudfish
-```
-
-```python
-import mudfish
-
-result = mudfish.crawl("https://example.com", depth=2, concurrency=30)
-print(result["stats"])
-for page in result["pages"]:
-    print(page["status_code"], page["url"], page["metadata"]["title"])
-```
-
-`crawl()` blocks until the crawl finishes and returns a plain `dict` (see `crates/python/README.md` for the full shape and all keyword options). It is synchronous only — no `asyncio` integration yet — and the GIL is released while it runs. See `crates/python/README.md` for details and limitations (including that initial wheels are built for the maintainer's platform only, not a full cross-platform CI matrix).
+`mudfish.crawl()` (see [Getting started](#getting-started) for install) takes the same options as the CLI, as keyword arguments: `depth`, `concurrency`, `per_host_concurrency`, `same_domain`, `max_urls`, `max_duration_secs`, `timeout_secs`, `request_delay_ms`, `max_response_bytes`, `respect_robots`, `allow_private_networks`. It blocks until the crawl finishes and returns a plain `dict` — no `asyncio` integration yet, though the GIL is released while it runs so other Python threads keep going. Full option table, return-value shape, and limitations: `crates/python/README.md`.
 
 ## What's working now (verified)
 
