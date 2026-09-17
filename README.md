@@ -60,9 +60,28 @@ Example:
 mudfish crawl https://example.com --depth 2 --concurrency 30 --output json > crawl.json
 ```
 
+## Python bindings
+
+The same Rust crawl engine is also available from Python, via a native [PyO3](https://pyo3.rs) extension (no subprocess, no server hop):
+
+```bash
+pip install mudfish
+```
+
+```python
+import mudfish
+
+result = mudfish.crawl("https://example.com", depth=2, concurrency=30)
+print(result["stats"])
+for page in result["pages"]:
+    print(page["status_code"], page["url"], page["metadata"]["title"])
+```
+
+`crawl()` blocks until the crawl finishes and returns a plain `dict` (see `crates/python/README.md` for the full shape and all keyword options). It is synchronous only — no `asyncio` integration yet — and the GIL is released while it runs. See `crates/python/README.md` for details and limitations (including that initial wheels are built for the maintainer's platform only, not a full cross-platform CI matrix).
+
 ## What's working now (verified)
 
-Verified by 40 automated tests (`cargo test --workspace`: 9 core, 9+7 fetch, 5 frontier, 7 parser, 3 CLI integration) plus manual crawls against live sites (example.com, rust-lang.org):
+Verified by 40 Rust tests (`cargo test --workspace`: 9 core, 9+7 fetch, 5 frontier, 7 parser, 3 CLI integration) plus 4 Python-binding tests (`pytest` in `crates/python`), plus manual crawls against live sites (example.com, rust-lang.org):
 
 - Async HTTP crawling with a bounded worker pool (`tokio`), global + per-host concurrency limits.
 - URL frontier: pluggable priority scheduling (depth-based by default, not FIFO), URL-level dedup via normalized fingerprinting, and a correctness-tested termination protocol (workers shut down cleanly on drain, on a hard `stop()` signal for budget limits, or hang-free under concurrent load — see `crates/frontier`'s test suite for the specific race conditions this closes).
@@ -73,6 +92,7 @@ Verified by 40 automated tests (`cargo test --workspace`: 9 core, 9+7 fetch, 5 f
 - HTML parsing: link extraction (with relative-URL resolution, anchor text, `rel`), title/meta-description/canonical extraction, non-crawlable scheme filtering (`mailto:`, `javascript:`, etc.), and graceful handling of malformed HTML.
 - Same-domain scoping that correctly follows the seed's *resolved* host through redirects (e.g. `www.example.com` → `example.com`) rather than the literal host typed on the command line — this was a real bug caught during manual testing against rust-lang.org and is now covered by a regression test.
 - JSON/JSONL/human-readable summary output.
+- Python bindings (`pip install mudfish`) exposing the same crawl engine as a native extension — verified against a local test server (basic crawl, same-domain link-following, invalid-URL error handling) and manually against live sites including the SSRF guard.
 
 ## What's built but not verified
 

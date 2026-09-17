@@ -12,13 +12,30 @@ MudFish/
     frontier/             priority queue, dedup, termination protocol — no I/O
     fetch/                HTTP fetching, robots.txt, politeness, SSRF guard
     parser/               HTML parsing: links, metadata
+    engine/               async crawl orchestration (wires frontier+fetch+parser
+                          together); the single shared core consumed by both
+                          the CLI and the Python bindings
+    python/                PyO3 bindings exposing `engine::crawl` to Python
+                          (mixed maturin layout: native ext + python/mudfish/)
   apps/
-    mudfish/              CLI + async crawl controller (the only crate that wires
-                          the others together); ships as both a lib (for testing
-                          the controller without a subprocess) and a bin.
+    mudfish/              CLI: parses args into a CrawlConfig, calls
+                          `mudfish_engine::crawl`, formats output. Ships as
+                          both a lib (for its own integration tests) and a bin.
 ```
 
-`core` has zero dependencies on the other crates and no I/O — everything else depends on it. `frontier`, `fetch`, and `parser` don't depend on each other. This isn't speculative layering: it's what let each one be tested in isolation (`cargo test -p mudfish-frontier` doesn't need a network), and it's what will let a future browser-backed fetcher slot in beside `HttpFetcher` without touching `frontier` or `parser` at all.
+`core` has zero dependencies on the other crates and no I/O — everything else depends on it. `frontier`, `fetch`, and `parser` don't depend on each other, and neither depends on `engine` (it depends on them). This isn't speculative layering: it's what let each one be tested in isolation (`cargo test -p mudfish-frontier` doesn't need a network), and it's what let `engine` get pulled out of the CLI app with a mechanical, low-risk refactor once a second consumer (`crates/python`) actually needed the same orchestration logic without any `clap`-specific types attached. The same reasoning will apply to a future browser-backed fetcher slotting in beside `HttpFetcher` without touching `frontier` or `parser` at all.
+
+## Why `engine` is a separate crate from the CLI
+
+Originally, the crawl orchestration loop (worker pool, frontier wiring, same-domain scoping) lived directly in `apps/mudfish/src/crawl.rs` and took the CLI's `clap`-derived `CrawlArgs` struct as input. That was fine with one consumer. It stopped being fine the moment Python bindings needed the same orchestration logic without linking against `clap` or constructing a fake `CrawlArgs` — so `crawl()` was moved into `crates/engine`, taking `mudfish_core::CrawlConfig` directly (the layer-appropriate type: plain data, no argument-parsing concerns). `apps/mudfish/src/crawl.rs` is now a thin `CrawlArgs -> CrawlConfig` translation, and `crates/python/src/lib.rs` builds the same `CrawlConfig` straight from Python keyword arguments. Both call `mudfish_engine::crawl(&config)` — the orchestration logic itself is not duplicated, and the refactor was verified safe by the fact that all 40 existing tests kept passing with zero changes to their assertions.
+
+## Python bindings: synchronous, native extension
+
+`crates/python` is a PyO3 `cdylib` (via `maturin`, mixed-layout: `python/mudfish/__init__.py` is a thin Python wrapper around the native `_mudfish` extension module) exposing one function, `crawl()`. Two decisions worth explaining:
+
+- **Native extension, not a REST client.** The original brief's own phasing puts a REST/gRPC server at Phase 7, which doesn't exist yet — a thin HTTP client has nothing to talk to. A PyO3 extension was the only viable option today, not a stopgap chosen over a "better" option; the REST-client path (`ROADMAP_HONEST.md`'s originally-deferred plan) is still worth revisiting once Phase 7 exists, since it would decouple Python releases from the Rust build toolchain.
+- **Blocking, not `asyncio`-integrated.** `crawl()` calls `Python::detach` (PyO3 0.29's renamed `allow_threads`) to release the GIL, then creates its own single-use `tokio::runtime::Runtime` and blocks on it. This means other Python threads keep running during a crawl, but there's no way to `await` it from an async Python caller. Bridging into `asyncio` properly (via `pyo3-async-runtimes` or similar) is a real but separable piece of work, deferred until there's a concrete caller who needs it.
+- **`CrawlResult` → Python dict via `pythonize`**, not hand-written `IntoPyObject` implementations. `CrawlResult` is already `Serialize`; `pythonize::pythonize` converts any serializable value into the equivalent Python object graph in one call. Hand-writing the conversion for every nested struct (`Page`, `PageMetadata`, `Link`, `CrawlStats`, ...) would be pure boilerplate that drifts out of sync every time a field is added on the Rust side.
 
 ## The frontier's termination protocol
 

@@ -1,3 +1,12 @@
 /target
 **/*.rs.bk
 *.pdb
+
+# Python bindings build artifacts
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+crates/python/dist/
+crates/python/python/mudfish/*.so
+crates/python/python/mudfish/*.pyd
