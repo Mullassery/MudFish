@@ -1,0 +1,22 @@
+[package]
+name = "mudfish-parser"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "HTML parsing, link extraction, and metadata extraction for Mudfish Crawler"
+
+[lib]
+name = "mudfish_parser"
+
+[dependencies]
+mudfish-core = { path = "../core" }
+scraper = "0.27.0"
+url = { version = "2.5.8", features = ["serde"] }
+
+[dev-dependencies]
+criterion = { version = "0.8.2", features = ["html_reports"] }
+
+[[bench]]
+name = "parse_html"
+harness = false

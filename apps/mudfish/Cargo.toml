@@ -1,0 +1,33 @@
+[package]
+name = "mudfish"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Mudfish Crawler: a Rust-native web crawling and intelligence engine"
+
+[lib]
+name = "mudfish"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mudfish"
+path = "src/main.rs"
+
+[dependencies]
+mudfish-core = { path = "../../crates/core" }
+mudfish-frontier = { path = "../../crates/frontier" }
+mudfish-fetch = { path = "../../crates/fetch" }
+mudfish-parser = { path = "../../crates/parser" }
+tokio = { version = "1.53.1", features = ["full"] }
+clap = { version = "4.6.7", features = ["derive"] }
+serde_json = "1.0.151"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }
+anyhow = "1.0.104"
+url = { version = "2.5.8", features = ["serde"] }
+uuid = { version = "1.26.1", features = ["v4"] }
+
+[dev-dependencies]
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "test-util"] }
+wiremock = "0.6.5"

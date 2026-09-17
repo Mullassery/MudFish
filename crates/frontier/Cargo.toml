@@ -1,0 +1,19 @@
+[package]
+name = "mudfish-frontier"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "URL frontier: priority queue, dedup, and termination detection for Mudfish Crawler"
+
+[lib]
+name = "mudfish_frontier"
+
+[dependencies]
+dashmap = "6.2.1"
+mudfish-core = { path = "../core" }
+tokio = { version = "1.53.1", features = ["sync", "rt", "time", "macros"] }
+url = "2.5.8"
+
+[dev-dependencies]
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "test-util"] }

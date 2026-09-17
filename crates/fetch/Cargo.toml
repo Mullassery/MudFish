@@ -1,0 +1,26 @@
+[package]
+name = "mudfish-fetch"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "HTTP fetch layer, robots.txt handling, and politeness for Mudfish Crawler"
+
+[lib]
+name = "mudfish_fetch"
+
+[dependencies]
+bytes = "1.12.1"
+dashmap = "6.2.1"
+mudfish-core = { path = "../core" }
+rand = "0.10.2"
+reqwest = { version = "0.13.5", default-features = false, features = ["gzip", "brotli", "deflate", "zstd", "rustls", "http2", "cookies", "stream"] }
+texting_robots = "0.2.2"
+thiserror = "2.0.20"
+tokio = { version = "1.53.1", features = ["time", "rt", "macros"] }
+tracing = "0.1.44"
+url = { version = "2.5.8", features = ["serde"] }
+
+[dev-dependencies]
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "test-util"] }
+wiremock = "0.6.5"
