@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Rust fmt / clippy / test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      # mudfish-python is excluded here: it's a PyO3 extension-module cdylib
+      # that deliberately omits libpython at link time, so plain `cargo
+      # build`/`test` cannot link it (this is normal for PyO3 extensions,
+      # not a bug). It's covered separately by the `python-bindings` job
+      # below, which builds it correctly via maturin.
+      - name: cargo clippy (workspace, excluding mudfish-python)
+        run: cargo clippy --workspace --exclude mudfish-python --all-targets -- -D warnings
+
+      - name: cargo clippy (mudfish-python)
+        run: cargo clippy -p mudfish-python -- -D warnings
+
+      - name: cargo test (workspace, excluding mudfish-python)
+        run: cargo test --workspace --exclude mudfish-python
+
+  python-bindings:
+    name: Python bindings (maturin + pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install maturin and test dependencies
+        run: pip install maturin pytest
+
+      - name: Build and install extension (develop mode)
+        working-directory: crates/python
+        run: maturin develop --release
+
+      - name: pytest
+        working-directory: crates/python
+        run: pytest tests/ -v

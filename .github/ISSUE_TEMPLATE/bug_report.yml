@@ -1,0 +1,61 @@
+name: Bug report
+description: Something doesn't work the way the docs say it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing: check `README.md` and `ROADMAP_HONEST.md` first — a lot of
+        features (browser rendering, structured extraction, distributed crawling,
+        persistence) are simply not built yet, not bugs.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: What did you expect, and what did you get instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: Exact command (CLI) or code (Python), including flags/arguments.
+      render: shell
+    validations:
+      required: true
+
+  - type: dropdown
+    id: entry-point
+    attributes:
+      label: Entry point
+      options:
+        - Rust CLI (mudfish crawl ...)
+        - Python bindings (import mudfish)
+        - Both
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `mudfish --version` or `mudfish.__version__` / `pip show mudfish`, and the git commit if built from source.
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: OS / architecture
+      placeholder: e.g. macOS 15 arm64, Ubuntu 24.04 x86_64
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output
+      description: Error message, stack trace, or unexpected CLI/JSON output. Do not paste secrets or private URLs you don't want public.
+      render: shell

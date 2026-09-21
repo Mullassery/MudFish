@@ -1,5 +1,7 @@
 # Mudfish Crawler
 
+[![CI](https://github.com/Mullassery/MudFish/actions/workflows/ci.yml/badge.svg)](https://github.com/Mullassery/MudFish/actions/workflows/ci.yml)
+
 A Rust-native web crawling and intelligence engine — deterministic crawling first, browser rendering only when required, AI reasoning only when useful.
 
 Mudfish is not a clone of any existing crawler or scraping product. It is being built from first principles as a wedge across three ideas that are usually separate products: fast async HTTP crawling, developer-facing structured extraction, and automatic API/website intelligence discovery.
@@ -109,6 +111,14 @@ Verified by 40 Rust tests (`cargo test --workspace`: 9 core, 9+7 fetch, 5 fronti
 ## Architecture
 
 See `ARCHITECTURE.md` for the workspace layout and the reasoning behind the key design decisions (frontier termination protocol, SSRF resolver design, same-domain scoping).
+
+## Contributing
+
+See `CONTRIBUTING.md` for build/test setup and what a good pull request looks like. Security issues: see `SECURITY.md` (please don't file those as public issues). Behavior changes are tracked in `CHANGELOG.md`.
+
+## Status
+
+Early-stage, single-maintainer, Phase 1 only (see "Current scope" above and `ROADMAP_HONEST.md` for the full honest breakdown of what's built, what's verified, and what's known-broken or missing). Not "production-ready" in the sense of having been run at scale, load-tested, or independently security-reviewed — see `SECURITY.md` and `ROADMAP_HONEST.md`'s technical debt section for specifics.
 
 ## License
 
