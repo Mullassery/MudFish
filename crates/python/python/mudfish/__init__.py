@@ -7,7 +7,7 @@ from typing import Any, Optional
 from ._mudfish import crawl as _crawl
 
 __all__ = ["crawl"]
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 
 def crawl(

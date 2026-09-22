@@ -11,8 +11,8 @@ name = "_mudfish"
 crate-type = ["cdylib"]
 
 [dependencies]
-mudfish-core = { version = "0.1.0", path = "../core" }
-mudfish-engine = { version = "0.1.0", path = "../engine" }
+mudfish-core = { version = "0.1.1", path = "../core" }
+mudfish-engine = { version = "0.1.1", path = "../engine" }
 pyo3 = { version = "0.29.2", features = ["extension-module", "abi3-py39"] }
 pythonize = "0.29.0"
 tokio = { version = "1.53.1", features = ["rt-multi-thread"] }

@@ -9,6 +9,8 @@ breaking at any point.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-22
+
 ### Added
 - OSS project scaffolding: `CONTRIBUTING.md`, `SECURITY.md`,
   `CODE_OF_CONDUCT.md`, this changelog, GitHub issue/PR templates, and a

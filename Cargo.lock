@@ -1303,7 +1303,7 @@ dependencies = [
 
 [[package]]
 name = "mudfish"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -1319,7 +1319,7 @@ dependencies = [
 
 [[package]]
 name = "mudfish-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "criterion",
  "serde",
@@ -1331,7 +1331,7 @@ dependencies = [
 
 [[package]]
 name = "mudfish-engine"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "mudfish-core",
@@ -1346,7 +1346,7 @@ dependencies = [
 
 [[package]]
 name = "mudfish-fetch"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bytes",
  "dashmap",
@@ -1363,7 +1363,7 @@ dependencies = [
 
 [[package]]
 name = "mudfish-frontier"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dashmap",
  "mudfish-core",
@@ -1373,7 +1373,7 @@ dependencies = [
 
 [[package]]
 name = "mudfish-parser"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "criterion",
  "mudfish-core",
@@ -1383,7 +1383,7 @@ dependencies = [
 
 [[package]]
 name = "mudfish-python"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "mudfish-core",
  "mudfish-engine",
