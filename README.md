@@ -89,7 +89,7 @@ mudfish crawl https://example.com --depth 2 --concurrency 30 --output json > cra
 
 ## What's working now (verified)
 
-Verified by 40 Rust tests (`cargo test --workspace`: 9 core, 9+7 fetch, 5 frontier, 7 parser, 3 CLI integration) plus 4 Python-binding tests (`pytest` in `crates/python`), plus manual crawls against live sites (example.com, rust-lang.org):
+Verified by 42 Rust tests (`cargo test --workspace`: 9 core, 9+7 fetch, 6 frontier, 7 parser, 1 engine, 3 CLI integration) plus 4 Python-binding tests (`pytest` in `crates/python`), plus manual crawls against live sites (example.com, rust-lang.org):
 
 - Async HTTP crawling with a bounded worker pool (`tokio`), global + per-host concurrency limits.
 - URL frontier: pluggable priority scheduling (depth-based by default, not FIFO), URL-level dedup via normalized fingerprinting, and a correctness-tested termination protocol (workers shut down cleanly on drain, on a hard `stop()` signal for budget limits, or hang-free under concurrent load — see `crates/frontier`'s test suite for the specific race conditions this closes).

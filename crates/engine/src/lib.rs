@@ -1,5 +1,5 @@
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
 use mudfish_core::{CrawlConfig, CrawlErrorRecord, CrawlResult, CrawlStats, FetchMethod, Page};
@@ -9,6 +9,33 @@ use mudfish_parser::parse_html;
 use tokio::sync::{Mutex, Semaphore};
 use tracing::{debug, warn};
 use uuid::Uuid;
+
+/// Updates `lock` to `new_host` if it differs, recovering from poisoning
+/// instead of propagating it.
+///
+/// A single worker panicking while briefly holding this write lock (e.g. a
+/// future bug elsewhere in the crawl loop) must not cascade into every
+/// other worker panicking on their next `read`/`write` of the resolved
+/// scope host — that would take down the whole worker pool over what was,
+/// structurally, just a `String` write. The recovered value is safe to
+/// keep using: the only mutation this lock ever guards is a whole-`String`
+/// replacement, so a panic can't leave it partially written.
+fn update_scope_host(lock: &RwLock<String>, new_host: &str) {
+    let mut guard = lock
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if guard.as_str() != new_host {
+        *guard = new_host.to_string();
+    }
+}
+
+/// Reads the current scope host, recovering from poisoning instead of
+/// propagating it. See `update_scope_host` for why this is safe.
+fn read_scope_host(lock: &RwLock<String>) -> String {
+    lock.read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone()
+}
 
 #[derive(Default)]
 struct StatsCounter {
@@ -39,9 +66,7 @@ pub async fn crawl(config: &CrawlConfig) -> anyhow::Result<CrawlResult> {
     // cross-domain. Safe to update from a single worker with no lock
     // contention concerns: no depth>0 item can exist in the frontier until
     // the seed (depth 0) has been processed once.
-    let scope_host = Arc::new(std::sync::RwLock::new(
-        seed.host_str().unwrap_or_default().to_string(),
-    ));
+    let scope_host = Arc::new(RwLock::new(seed.host_str().unwrap_or_default().to_string()));
 
     let crawl_id = Uuid::new_v4();
     let started_at = Instant::now();
@@ -136,19 +161,12 @@ pub async fn crawl(config: &CrawlConfig) -> anyhow::Result<CrawlResult> {
 
                         if item.depth == 0 {
                             if let Some(final_host) = resp.final_url.host_str() {
-                                let mut guard =
-                                    scope_host.write().expect("scope_host lock not poisoned");
-                                if guard.as_str() != final_host {
-                                    *guard = final_host.to_string();
-                                }
+                                update_scope_host(&scope_host, final_host);
                             }
                         }
 
                         if item.depth < config.max_depth {
-                            let effective_scope_host = scope_host
-                                .read()
-                                .expect("scope_host lock not poisoned")
-                                .clone();
+                            let effective_scope_host = read_scope_host(&scope_host);
                             for link in &links {
                                 if config.same_domain
                                     && link.url.host_str() != Some(effective_scope_host.as_str())
@@ -220,4 +238,33 @@ pub async fn crawl(config: &CrawlConfig) -> anyhow::Result<CrawlResult> {
         pages,
         errors,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scope_host_lock_recovers_from_poisoning_instead_of_panicking() {
+        // Simulate a worker panicking while briefly holding the scope_host
+        // write lock (e.g. some future bug elsewhere in the crawl loop).
+        // Before the fix, `update_scope_host`/`read_scope_host` used
+        // `.expect(...)`, so every other worker's next read or write would
+        // itself panic on the poisoned `RwLock`, cascading one worker's
+        // crash into the whole pool.
+        let lock = Arc::new(RwLock::new("example.com".to_string()));
+
+        let lock2 = lock.clone();
+        let panicked = std::thread::spawn(move || {
+            let _guard = lock2.write().unwrap();
+            panic!("simulated worker panic while holding the scope_host lock");
+        })
+        .join();
+        assert!(panicked.is_err(), "the spawned thread should have panicked");
+
+        // These must not panic even though the lock is now poisoned, and
+        // must still behave correctly (read-back reflects the write).
+        update_scope_host(&lock, "final.example.com");
+        assert_eq!(read_scope_host(&lock), "final.example.com");
+    }
 }

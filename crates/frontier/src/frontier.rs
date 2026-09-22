@@ -66,7 +66,18 @@ impl Frontier {
         };
 
         self.pending.fetch_add(1, Ordering::SeqCst);
-        self.queue.lock().unwrap().push(item);
+        // Recover from poisoning rather than propagate it: a worker
+        // panicking while briefly holding this lock (e.g. a future bug in
+        // `PriorityScorer`) must not cascade into every other worker
+        // panicking on their next queue access. `BinaryHeap::push`/`pop`
+        // can't leave the heap invariant broken by a panic mid-call (the
+        // panic would have to originate in `Ord`, which `FrontierItem`
+        // doesn't implement in a way that can panic), so the recovered
+        // data is safe to keep using as-is.
+        self.queue
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push(item);
         self.notify.notify_one();
         true
     }
@@ -85,7 +96,12 @@ impl Frontier {
                 return None;
             }
 
-            if let Some(item) = self.queue.lock().unwrap().pop() {
+            if let Some(item) = self
+                .queue
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .pop()
+            {
                 return Some(item);
             }
 
@@ -122,7 +138,10 @@ impl Frontier {
     }
 
     pub fn queued_len(&self) -> usize {
-        self.queue.lock().unwrap().len()
+        self.queue
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .len()
     }
 
     pub fn pending(&self) -> i64 {
@@ -234,6 +253,37 @@ mod tests {
             assert!(h.await.unwrap().is_none());
         }
         assert!(f.is_stopped());
+    }
+
+    #[test]
+    fn poisoned_queue_lock_is_recovered_not_propagated() {
+        // Simulate a worker panicking while holding the frontier's internal
+        // queue lock (e.g. some future bug elsewhere in the crawl loop).
+        // Before the fix, every subsequent `try_push`/`pop`/`queued_len`
+        // call would itself panic on the poisoned `Mutex`, cascading one
+        // worker's crash into the whole pool. After the fix, the lock is
+        // recovered via `into_inner()` and the frontier keeps working.
+        let f = Arc::new(frontier());
+        f.try_push(Url::parse("https://example.com/a").unwrap(), 0, None);
+
+        let f2 = f.clone();
+        let panicked = std::thread::spawn(move || {
+            let _guard = f2.queue.lock().unwrap();
+            panic!("simulated worker panic while holding the frontier queue lock");
+        })
+        .join();
+        assert!(panicked.is_err(), "the spawned thread should have panicked");
+
+        // These must not panic even though the lock is now poisoned.
+        assert_eq!(f.queued_len(), 1);
+        assert!(f.try_push(Url::parse("https://example.com/b").unwrap(), 0, None));
+        assert_eq!(f.queued_len(), 2);
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        let popped = rt.block_on(f.pop());
+        assert!(popped.is_some());
     }
 
     // Minimal join_all so we don't pull in futures crate just for tests.

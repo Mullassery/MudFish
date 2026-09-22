@@ -18,6 +18,22 @@ breaking at any point.
   yet," and that was true until now.
 - `.github/dependabot.yml` for Cargo, pip (`crates/python`), and GitHub
   Actions dependency updates.
+- `rust-toolchain.toml` pinning `channel = "1.97"` (matching the version the
+  README already claimed) plus `rustfmt`/`clippy` components, so
+  contributors and CI resolve the same toolchain automatically.
+
+### Fixed
+- **Mutex/RwLock poisoning no longer cascades across the worker pool.**
+  `crates/frontier/src/frontier.rs` (the internal queue `Mutex`) and
+  `crates/engine/src/lib.rs` (the `scope_host` `RwLock`, now wrapped in
+  `update_scope_host`/`read_scope_host` helpers) recover from a poisoned
+  lock via `.unwrap_or_else(|poisoned| poisoned.into_inner())` instead of
+  panicking again on `.unwrap()`/`.expect(...)`. Previously, one worker
+  panicking while holding either lock would poison it and then panic every
+  other worker on their next access, taking down the whole crawl instead of
+  failing just the one item. Verified with two new tests that deliberately
+  poison each lock from a panicking thread and assert subsequent operations
+  still succeed.
 
 ## [0.1.0] - 2026-09-18
 
