@@ -179,3 +179,54 @@ async fn dedups_links_reachable_by_multiple_paths() {
     let home_fetches = result.pages.iter().filter(|p| p.url.path() == "/").count();
     assert_eq!(home_fetches, 1);
 }
+
+#[tokio::test]
+async fn max_urls_is_a_hard_cap_under_concurrency() {
+    // Regression test: with `concurrency` workers racing a load-then-branch
+    // check on `stats.fetched` against `max_urls`, all of them could observe
+    // the count still under budget and proceed before any incremented it,
+    // overshooting the "hard limit" (real-world repro: --max-urls 5
+    // --concurrency 10 against a fan-out site fetched 14 pages instead of
+    // 5). The fix reserves each fetch slot atomically via
+    // compare_exchange_weak before the fetch is made, so at most `max_urls`
+    // fetches can ever succeed regardless of how many workers race the gate.
+    let server = MockServer::start().await;
+
+    let n = 20;
+    let links: String = (0..n)
+        .map(|i| format!(r#"<a href="/page{i}">page{i}</a>"#))
+        .collect();
+    Mock::given(method("GET"))
+        .and(path("/"))
+        .respond_with(html_response(&format!(
+            "<html><body>{links}</body></html>"
+        )))
+        .mount(&server)
+        .await;
+    for i in 0..n {
+        Mock::given(method("GET"))
+            .and(path(format!("/page{i}")))
+            .respond_with(html_response("<html><body>leaf</body></html>"))
+            .mount(&server)
+            .await;
+    }
+
+    let mut args = args_for(server.uri());
+    args.depth = 1;
+    args.concurrency = 10;
+    args.per_host_concurrency = 10;
+    args.max_urls = 5;
+    let result = crawl::execute(&args).await.unwrap();
+
+    assert_eq!(
+        result.stats.urls_fetched, 5,
+        "max_urls=5 must cap urls_fetched at exactly 5 even with 10 workers \
+         racing a 21-page fan-out, got {} pages: {:?}",
+        result.stats.urls_fetched,
+        result
+            .pages
+            .iter()
+            .map(|p| p.url.path().to_string())
+            .collect::<Vec<_>>()
+    );
+}

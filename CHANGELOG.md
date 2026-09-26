@@ -9,6 +9,19 @@ breaking at any point.
 
 ## [Unreleased]
 
+### Fixed
+- **`--max-urls` was not a hard cap under concurrency.** Workers raced a
+  load-then-branch check of `stats.fetched` against `max_urls` before
+  fetching; with N workers racing concurrently, all N could observe the
+  count still under budget and proceed before any incremented it,
+  overshooting the limit by up to `concurrency` (real repro: `--max-urls 5
+  --concurrency 10` against a fan-out site fetched 14 pages instead of 5).
+  Fixed by reserving each fetch slot atomically via `compare_exchange_weak`
+  immediately before the fetch, releasing the reservation on fetch failure
+  so it doesn't permanently consume budget a later successful fetch could
+  use. New regression test:
+  `apps/mudfish/tests/crawl.rs::max_urls_is_a_hard_cap_under_concurrency`.
+
 ## [0.1.1] - 2026-09-22
 
 ### Added

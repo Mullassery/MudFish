@@ -106,7 +106,7 @@ pub async fn crawl(config: &CrawlConfig) -> anyhow::Result<CrawlResult> {
         let global_sem = global_sem.clone();
 
         workers.push(tokio::spawn(async move {
-            loop {
+            'worker: loop {
                 if let Some(deadline) = deadline {
                     if Instant::now() >= deadline {
                         frontier.stop();
@@ -114,6 +114,10 @@ pub async fn crawl(config: &CrawlConfig) -> anyhow::Result<CrawlResult> {
                     }
                 }
                 if let Some(max) = max_urls {
+                    // Cheap fast-path: avoids popping from the frontier when
+                    // the budget is clearly already exhausted. Not itself
+                    // race-free under concurrent workers -- the actual cap
+                    // is enforced atomically below, right before the fetch.
                     if stats.fetched.load(Ordering::Relaxed) >= max {
                         frontier.stop();
                         break;
@@ -134,13 +138,41 @@ pub async fn crawl(config: &CrawlConfig) -> anyhow::Result<CrawlResult> {
                     continue;
                 }
 
+                // Atomically reserve a fetch slot against `max_urls` right
+                // before committing to the fetch. The load-then-branch check
+                // above is only a fast path -- with N workers racing it
+                // concurrently, all N can observe `fetched < max` and proceed
+                // before any of them increments, overshooting the "hard
+                // limit" by up to `concurrency` (e.g. --max-urls 5
+                // --concurrency 10 previously fetched 14 real pages). A
+                // compare-exchange loop makes the admit-or-reject decision
+                // atomic, so at most `max` reservations can ever succeed.
+                if let Some(max) = max_urls {
+                    let mut current = stats.fetched.load(Ordering::SeqCst);
+                    loop {
+                        if current >= max {
+                            frontier.stop();
+                            frontier.complete(&item);
+                            break 'worker;
+                        }
+                        match stats.fetched.compare_exchange_weak(
+                            current,
+                            current + 1,
+                            Ordering::SeqCst,
+                            Ordering::SeqCst,
+                        ) {
+                            Ok(_) => break,
+                            Err(actual) => current = actual,
+                        }
+                    }
+                }
+
                 let host_sem = politeness.host_semaphore(&host);
                 let _host_permit = host_sem.acquire().await.expect("semaphore not closed");
                 politeness.wait_for_slot(&host).await;
 
                 match fetcher.fetch(&item.url).await {
                     Ok(resp) => {
-                        stats.fetched.fetch_add(1, Ordering::Relaxed);
                         stats
                             .bytes
                             .fetch_add(resp.body.len() as u64, Ordering::Relaxed);
@@ -200,6 +232,13 @@ pub async fn crawl(config: &CrawlConfig) -> anyhow::Result<CrawlResult> {
                     }
                     Err(err) => {
                         warn!(url = %item.url, error = %err, "fetch failed");
+                        // Release the slot reserved above: a failed fetch
+                        // never became a real `urls_fetched` page, so it
+                        // must not permanently consume budget that a later,
+                        // successful fetch could have used.
+                        if max_urls.is_some() {
+                            stats.fetched.fetch_sub(1, Ordering::SeqCst);
+                        }
                         stats.errors.fetch_add(1, Ordering::Relaxed);
                         errors.lock().await.push(CrawlErrorRecord {
                             url: item.url.clone(),
