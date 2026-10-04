@@ -3,7 +3,7 @@ use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
 use mudfish_core::{CrawlConfig, CrawlErrorRecord, CrawlResult, CrawlStats, FetchMethod, Page};
-use mudfish_fetch::{HttpFetcher, PolitenessManager, RobotsManager};
+use mudfish_fetch::{DomainHealthTracker, HttpFetcher, PolitenessManager, RobotsManager};
 use mudfish_frontier::{DepthPriority, Frontier};
 use mudfish_parser::parse_html;
 use tokio::sync::{Mutex, Semaphore};
@@ -77,6 +77,12 @@ pub async fn crawl(config: &CrawlConfig) -> anyhow::Result<CrawlResult> {
         config.request_delay,
         config.per_host_concurrency,
     ));
+    // Opens a host's circuit (and skips further requests to it for a
+    // cooldown period) after repeated 429/403/5xx responses, instead of
+    // retrying it into the ground -- see `mudfish_fetch::health` for the
+    // full breaker semantics. This is "detect -> slow down -> cool down",
+    // never an attempt to get around whatever is blocking the crawler.
+    let health = Arc::new(DomainHealthTracker::default());
     let frontier = Arc::new(Frontier::new(
         Box::new(DepthPriority),
         config.normalization.clone(),
@@ -104,6 +110,7 @@ pub async fn crawl(config: &CrawlConfig) -> anyhow::Result<CrawlResult> {
         let config = config.clone();
         let scope_host = scope_host.clone();
         let global_sem = global_sem.clone();
+        let health = health.clone();
 
         workers.push(tokio::spawn(async move {
             'worker: loop {
@@ -131,6 +138,16 @@ pub async fn crawl(config: &CrawlConfig) -> anyhow::Result<CrawlResult> {
 
                 let _global_permit = global_sem.acquire().await.expect("semaphore not closed");
                 let host = item.url.host_str().unwrap_or("").to_string();
+
+                if !health.is_available(&host) {
+                    // The circuit is open (this host has been repeatedly
+                    // 429/403/5xx-ing us) and still cooling down -- skip
+                    // without even trying, same bookkeeping as a
+                    // robots-disallowed URL below.
+                    stats.skipped.fetch_add(1, Ordering::Relaxed);
+                    frontier.complete(&item);
+                    continue;
+                }
 
                 if config.respect_robots && !robots.is_allowed(&fetcher, &item.url).await {
                     stats.skipped.fetch_add(1, Ordering::Relaxed);
@@ -173,6 +190,7 @@ pub async fn crawl(config: &CrawlConfig) -> anyhow::Result<CrawlResult> {
 
                 match fetcher.fetch(&item.url).await {
                     Ok(resp) => {
+                        health.record_response(&host, resp.status);
                         stats
                             .bytes
                             .fetch_add(resp.body.len() as u64, Ordering::Relaxed);

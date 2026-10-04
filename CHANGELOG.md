@@ -16,6 +16,24 @@ breaking at any point.
   `reqwest::ClientBuilder::default_headers`; an invalid header name/value
   fails fetcher construction with `FetchError::InvalidHeader` instead of
   the fetcher being built in a broken state.
+- `crates/browser` (`mudfish-browser`): a real headless-Chrome (CDP, via
+  `chromiumoxide`) `BrowserRenderer` for pages that need JavaScript
+  execution. Launches once, reused across pages; returns rendered HTML,
+  captured network requests (`Network.requestWillBeSent`/
+  `responseReceived`), and cookies.
+- `mudfish_parser::static_html_looks_js_dependent`: a heuristic for
+  deciding whether a static HTTP response is probably a near-empty
+  client-rendered shell, as an adaptive-escalation signal for when to use
+  `BrowserRenderer` instead of the plain HTTP fetcher.
+- `mudfish_fetch::health::DomainHealthTracker`: a per-host circuit
+  breaker (opens after repeated 429/403/5xx, cools down with exponential
+  backoff, half-opens for one trial request). Wired into
+  `mudfish_engine::crawl`'s worker loop.
+- `mudfish_fetch::challenge::detect_challenge` /
+  `mudfish_fetch::status::{CrawlStatus, classify_status}`: heuristic
+  anti-bot-challenge detection and a structured
+  `Success`/`Throttled`/`Blocked`/`Challenged`/`Failed` status, for
+  reporting only -- never an attempt to bypass or solve a challenge.
 
 ### Fixed
 - **`--max-urls` was not a hard cap under concurrency.** Workers raced a

@@ -1,0 +1,23 @@
+[package]
+name = "mudfish-browser"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Headless-Chrome (CDP) rendering fallback for pages that need JavaScript execution, for Mudfish Crawler"
+
+[lib]
+name = "mudfish_browser"
+
+[dependencies]
+chromiumoxide = "0.7"
+futures = "0.3"
+mudfish-core = { path = "../core" }
+thiserror = "2.0.20"
+tokio = { version = "1.53.1", features = ["rt", "macros", "time", "sync"] }
+tracing = "0.1.44"
+url = "2.5.8"
+
+[dev-dependencies]
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "test-util"] }
+wiremock = "0.6.5"

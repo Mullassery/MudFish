@@ -96,6 +96,65 @@ fn resolve(base: &Url, href: &str) -> Option<Url> {
     base.join(href).ok()
 }
 
+/// Minimum visible body text (non-whitespace characters, `<script>`/
+/// `<style>` excluded) below which a page with at least one `<script>`
+/// tag is flagged as likely needing JavaScript execution to show its real
+/// content.
+const JS_DEPENDENT_TEXT_THRESHOLD: usize = 200;
+
+/// Heuristic signal for "this page's static HTML is probably a near-empty
+/// shell that JavaScript fills in after load" (a client-rendered SPA, or a
+/// page whose tags/content are injected by a tag-management script) --
+/// the decision `mudfish_browser::BrowserRenderer` exists to act on.
+///
+/// This is deliberately a cheap, imperfect heuristic, not a real rendering
+/// check: a page can have substantial static text *and* still inject
+/// additional tags/content via JS (this heuristic would say "no" there),
+/// and a page can have sparse text with no real JS dependency at all
+/// (e.g. a mostly-image gallery) and still be flagged "yes". Callers that
+/// need certainty should render and compare, not trust this alone --
+/// treat it as a cost-saving filter (skip the expensive browser render
+/// when it's obviously unnecessary), not a correctness guarantee.
+pub fn static_html_looks_js_dependent(html: &str) -> bool {
+    let document = Html::parse_document(html);
+
+    let has_script = Selector::parse("script")
+        .map(|sel| document.select(&sel).next().is_some())
+        .unwrap_or(false);
+    if !has_script {
+        return false;
+    }
+
+    // `ElementRef::text()` walks all descendant text nodes, which includes
+    // `<script>`/`<style>` contents (html5ever still represents those as
+    // text nodes) -- without subtracting them, a near-empty SPA shell
+    // with one large inline bootstrap script would be miscounted as
+    // "plenty of text" and never escalated.
+    let count_chars = |iter: &mut dyn Iterator<Item = &str>| -> usize {
+        iter.flat_map(str::chars)
+            .filter(|c| !c.is_whitespace())
+            .count()
+    };
+
+    let body_text_len = Selector::parse("body")
+        .ok()
+        .and_then(|sel| document.select(&sel).next())
+        .map(|body| count_chars(&mut body.text()))
+        .unwrap_or(0);
+
+    let script_style_len = Selector::parse("script, style")
+        .ok()
+        .map(|sel| {
+            document
+                .select(&sel)
+                .map(|el| count_chars(&mut el.text()))
+                .sum::<usize>()
+        })
+        .unwrap_or(0);
+
+    body_text_len.saturating_sub(script_style_len) < JS_DEPENDENT_TEXT_THRESHOLD
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -179,5 +238,38 @@ mod tests {
         let broken = "<html><body><a href='/x'>unterminated<div><p>hi";
         let page = parse_html(broken, &base());
         assert!(!page.links.is_empty());
+    }
+
+    #[test]
+    fn flags_near_empty_spa_shell_with_script_as_js_dependent() {
+        let spa_shell = r#"<html><body>
+            <div id="root"></div>
+            <script>console.log("bootstrap");</script>
+        </body></html>"#;
+        assert!(static_html_looks_js_dependent(spa_shell));
+    }
+
+    #[test]
+    fn does_not_flag_content_rich_page_even_with_a_large_inline_script() {
+        let big_script = "x".repeat(5000);
+        let content_rich = format!(
+            r#"<html><body>
+                <article>{}</article>
+                <script>var data = "{}";</script>
+            </body></html>"#,
+            "A real article with plenty of substantive text content. ".repeat(10),
+            big_script
+        );
+        assert!(
+            !static_html_looks_js_dependent(&content_rich),
+            "a large inline script's source text must not count toward \
+             visible body text"
+        );
+    }
+
+    #[test]
+    fn does_not_flag_sparse_page_with_no_script_at_all() {
+        let no_script = "<html><body><img src=\"/hero.jpg\"></body></html>";
+        assert!(!static_html_looks_js_dependent(no_script));
     }
 }

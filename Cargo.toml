@@ -6,6 +6,7 @@ members = [
     "crates/fetch",
     "crates/parser",
     "crates/engine",
+    "crates/browser",
     "crates/python",
     "apps/mudfish",
 ]
