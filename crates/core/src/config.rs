@@ -27,6 +27,10 @@ pub struct CrawlConfig {
     pub user_agent: String,
     pub respect_robots: bool,
     pub request_delay: Duration,
+    /// Extra headers sent with every request (e.g. `Cookie`/`Authorization`
+    /// for crawling pages that require auth). Empty by default, matching
+    /// plain anonymous crawling.
+    pub default_headers: Vec<(String, String)>,
     pub normalization: NormalizationOptions,
     /// When `false` (the default), resolved IPs in loopback/private/
     /// link-local/multicast space are refused (SSRF protection — see
@@ -60,6 +64,7 @@ impl Default for CrawlConfig {
             ),
             respect_robots: true,
             request_delay: Duration::from_millis(0),
+            default_headers: Vec::new(),
             normalization: NormalizationOptions::default(),
             allow_private_networks: false,
         }

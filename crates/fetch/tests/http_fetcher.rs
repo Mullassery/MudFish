@@ -3,7 +3,7 @@ use std::time::Duration;
 use mudfish_core::CrawlConfig;
 use mudfish_fetch::{HttpFetcher, PolitenessManager, RobotsManager};
 use url::Url;
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn test_config() -> CrawlConfig {
@@ -134,6 +134,50 @@ async fn missing_robots_txt_allows_everything() {
     let url = Url::parse(&format!("{}/anything", server.uri())).unwrap();
 
     assert!(robots.is_allowed(&fetcher, &url).await);
+}
+
+#[tokio::test]
+async fn default_headers_are_sent_with_every_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/secret"))
+        .and(header("cookie", "session=abc123"))
+        .and(header("x-api-key", "s3cr3t"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("ok"))
+        .mount(&server)
+        .await;
+
+    let config = CrawlConfig {
+        default_headers: vec![
+            ("Cookie".to_string(), "session=abc123".to_string()),
+            ("X-Api-Key".to_string(), "s3cr3t".to_string()),
+        ],
+        ..test_config()
+    };
+    let fetcher = HttpFetcher::new(&config).unwrap();
+    let url = Url::parse(&format!("{}/secret", server.uri())).unwrap();
+    let resp = fetcher.fetch(&url).await.unwrap();
+
+    assert_eq!(resp.status, 200);
+}
+
+#[tokio::test]
+async fn invalid_default_header_name_fails_fetcher_construction() {
+    let config = CrawlConfig {
+        default_headers: vec![("bad header".to_string(), "v".to_string())],
+        ..test_config()
+    };
+    match HttpFetcher::new(&config) {
+        Err(mudfish_fetch::FetchError::InvalidHeader(_)) => {}
+        other => panic!("expected InvalidHeader, got {}", describe(other)),
+    }
+}
+
+fn describe(result: Result<HttpFetcher, mudfish_fetch::FetchError>) -> String {
+    match result {
+        Ok(_) => "Ok(HttpFetcher)".to_string(),
+        Err(e) => format!("Err({e})"),
+    }
 }
 
 #[tokio::test]

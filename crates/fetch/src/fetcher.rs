@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use mudfish_core::CrawlConfig;
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use url::Url;
 
 use crate::error::FetchError;
@@ -46,6 +47,9 @@ impl HttpFetcher {
             .timeout(config.request_timeout);
         if !config.allow_private_networks {
             builder = builder.dns_resolver(Arc::new(SsrfGuardResolver));
+        }
+        if !config.default_headers.is_empty() {
+            builder = builder.default_headers(build_header_map(&config.default_headers)?);
         }
         let client = builder.build()?;
         Ok(Self {
@@ -124,6 +128,19 @@ impl HttpFetcher {
     }
 }
 
+fn build_header_map(headers: &[(String, String)]) -> Result<HeaderMap, FetchError> {
+    let mut map = HeaderMap::new();
+    for (name, value) in headers {
+        let header_name = HeaderName::from_bytes(name.as_bytes())
+            .map_err(|e| FetchError::InvalidHeader(format!("invalid header name '{name}': {e}")))?;
+        let header_value = HeaderValue::from_str(value).map_err(|e| {
+            FetchError::InvalidHeader(format!("invalid header value for '{name}': {e}"))
+        })?;
+        map.insert(header_name, header_value);
+    }
+    Ok(map)
+}
+
 /// Streams the body in chunks and aborts as soon as the cap is exceeded,
 /// rather than trusting `Content-Length` (which is absent for chunked
 /// responses and easy to lie about) — this is the actual defense against
@@ -183,5 +200,24 @@ mod tests {
         let d_huge = backoff_delay(20);
         assert!(d1 < d4);
         assert!(d_huge <= Duration::from_millis(30_250));
+    }
+
+    #[test]
+    fn build_header_map_accepts_valid_headers() {
+        let map = build_header_map(&[("Cookie".to_string(), "session=abc".to_string())]).unwrap();
+        assert_eq!(map.get("cookie").unwrap(), "session=abc");
+    }
+
+    #[test]
+    fn build_header_map_rejects_invalid_name() {
+        let err = build_header_map(&[("bad header".to_string(), "v".to_string())]).unwrap_err();
+        assert!(matches!(err, FetchError::InvalidHeader(_)));
+    }
+
+    #[test]
+    fn build_header_map_rejects_invalid_value() {
+        let err =
+            build_header_map(&[("X-Test".to_string(), "bad\nvalue".to_string())]).unwrap_err();
+        assert!(matches!(err, FetchError::InvalidHeader(_)));
     }
 }

@@ -9,6 +9,14 @@ breaking at any point.
 
 ## [Unreleased]
 
+### Added
+- `CrawlConfig::default_headers`: extra headers (e.g. `Cookie`/`Authorization`)
+  sent with every request, for crawling pages that require auth.
+  `HttpFetcher::new` now validates and attaches them via
+  `reqwest::ClientBuilder::default_headers`; an invalid header name/value
+  fails fetcher construction with `FetchError::InvalidHeader` instead of
+  the fetcher being built in a broken state.
+
 ### Fixed
 - **`--max-urls` was not a hard cap under concurrency.** Workers raced a
   load-then-branch check of `stats.fetched` against `max_urls` before

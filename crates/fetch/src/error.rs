@@ -10,4 +10,6 @@ pub enum FetchError {
     RobotsDisallowed,
     #[error("blocked by network policy: {0}")]
     PolicyBlocked(String),
+    #[error("invalid default header: {0}")]
+    InvalidHeader(String),
 }
