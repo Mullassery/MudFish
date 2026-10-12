@@ -13,3 +13,5 @@ __pycache__/
 crates/python/dist/
 crates/python/python/mudfish/*.so
 crates/python/python/mudfish/*.pyd
+
+graphify-out/
