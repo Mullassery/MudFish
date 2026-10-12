@@ -2,7 +2,7 @@
 
 Python bindings for [Mudfish Crawler](https://github.com/Mullassery/MudFish), a Rust-native web crawling and intelligence engine.
 
-This package wraps the Rust crawl engine directly (via [PyO3](https://pyo3.rs)) — there is no subprocess or network hop to a separate server. It currently exposes one function, synchronous/blocking crawling; the Rust project itself is at an early stage (Phase 1: HTTP-only crawling — see the main repo's `ROADMAP_HONEST.md` for full status).
+This package wraps the Rust crawl engine directly (via [PyO3](https://pyo3.rs)) — there is no subprocess or network hop to a separate server. It exposes a typed, Pythonic API over the engine; the Rust project itself is at an early stage (see the main repo's `ROADMAP_HONEST.md` for full status).
 
 ## Install
 
@@ -17,37 +17,68 @@ import mudfish
 
 result = mudfish.crawl("https://example.com", depth=2, concurrency=30)
 
-print(result["stats"])
-for page in result["pages"]:
-    print(page["status_code"], page["url"], page["metadata"]["title"])
+print(result.stats.urls_fetched, result.stats.duration_secs)
+for page in result:                          # CrawlResult is iterable over its pages
+    print(page.status_code, page.url, page.title)
 ```
 
-`crawl()` blocks until the crawl finishes (or hits `max_urls` / `max_duration_secs`) and returns a plain `dict`:
+`crawl()` blocks until the crawl finishes (or hits `max_urls` / `max_duration_secs`) and returns a typed `CrawlResult`:
+
+| Object | Fields |
+|---|---|
+| `CrawlResult` | `crawl_id`, `pages: list[Page]`, `errors: list[CrawlError]`, `stats: CrawlStats` — iterable over `pages`, `len()` is the page count, plus `ok_pages` |
+| `Page` | `url`, `final_url`, `status_code`, `content_type`, `depth`, `metadata: PageMetadata`, `links: list[Link]`, `body_bytes`, `fetched_via: FetchMethod` — helpers `title`, `is_ok` |
+| `PageMetadata` | `title`, `meta_description`, `canonical` |
+| `Link` | `url`, `anchor_text`, `rel` |
+| `CrawlError` | `url`, `message` |
+| `CrawlStats` | `urls_discovered`, `urls_fetched`, `urls_skipped`, `errors`, `bytes_downloaded`, `duration_ms` — helpers `duration_secs`, `throughput_per_sec` |
+| `FetchMethod` | `FetchMethod.HTTP` (`"Http"`) / `FetchMethod.BROWSER` (`"Browser"`) |
+
+Every typed object also supports the raw engine dict shape (`result["stats"]`, `page["status_code"]`, `page.to_dict()`), so code written against earlier versions keeps working. If you only want the raw dict, use `mudfish.crawl_dict(...)`.
+
+### Async
+
+`crawl_async()` runs the blocking engine on a worker thread, so it composes with `asyncio` and several crawls can run concurrently:
 
 ```python
-{
-    "crawl_id": str,
-    "pages": [
-        {
-            "url": str, "final_url": str, "status_code": int,
-            "content_type": str | None, "depth": int,
-            "metadata": {"title": str | None, "meta_description": str | None, "canonical": str | None},
-            "links": [{"url": str, "anchor_text": str | None, "rel": str | None}, ...],
-            "body_bytes": int, "fetched_via": "Http",
-        },
-        ...
-    ],
-    "errors": [{"url": str, "message": str}, ...],
-    "stats": {
-        "urls_discovered": int, "urls_fetched": int, "urls_skipped": int,
-        "errors": int, "bytes_downloaded": int, "duration_ms": int,
-    },
-}
+import asyncio
+import mudfish
+
+async def main() -> None:
+    results = await asyncio.gather(
+        mudfish.crawl_async("https://a.example"),
+        mudfish.crawl_async("https://b.example"),
+    )
+    for result in results:
+        print(result.stats.urls_fetched)
+
+asyncio.run(main())
 ```
+
+### Reusable configuration
+
+```python
+crawler = mudfish.Crawler(depth=1, concurrency=10)
+home = crawler.crawl("https://example.com")
+blog = await crawler.crawl_async("https://example.com/blog")
+```
+
+### Errors
+
+```python
+try:
+    mudfish.crawl("not-a-url")
+except mudfish.InvalidURLError:      # also a ValueError
+    ...
+except mudfish.CrawlFailedError:     # also a RuntimeError
+    ...
+```
+
+Everything derives from `mudfish.MudfishError`.
 
 ### Options
 
-All keyword-only, matching the CLI's flags:
+All keyword-only, matching the CLI's flags (also available as the `CrawlOptions` dataclass):
 
 | Parameter | Default | Meaning |
 |---|---|---|
@@ -62,10 +93,12 @@ All keyword-only, matching the CLI's flags:
 | `max_response_bytes` | `20 MB` | Per-response size cap |
 | `respect_robots` | `True` | Honor robots.txt |
 | `allow_private_networks` | `False` | Permit loopback/private targets (internal use only) |
+| `render_js` | `False` | Re-render JS-dependent pages in headless Chrome (needs Chrome on the host; much slower) |
+| `render_settle_ms` | `2000` | When `render_js` is on, settle time before capturing a rendered page |
 
 ## Limitations
 
-- **Blocking, not async.** `crawl()` spins up its own Tokio runtime internally and blocks until done. The GIL is released while it runs (other Python threads keep going), but there is no `asyncio` integration in this version.
+- **Chrome is not bundled.** With `render_js=True` the engine drives a headless Chrome that must already be installed on the host; if it cannot be launched, the crawl logs a warning and falls back to static HTML.
 - **Single-platform wheels initially.** Built and published from the maintainer's machine, not a cross-platform CI matrix yet — check PyPI for which platforms have wheels; others will need a Rust toolchain to build from source.
 
 ## License
