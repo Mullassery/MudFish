@@ -18,6 +18,8 @@ fn build_config(args: &CrawlArgs) -> anyhow::Result<CrawlConfig> {
         request_timeout: Duration::from_secs(args.timeout_secs),
         max_response_bytes: args.max_response_bytes,
         allow_private_networks: args.allow_private_networks,
+        render_js: args.render_js,
+        render_settle: Duration::from_millis(args.render_settle_ms),
         max_urls: Some(args.max_urls),
         max_duration: args.max_duration_secs.map(Duration::from_secs),
         ..CrawlConfig::default()

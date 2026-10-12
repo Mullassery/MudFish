@@ -1771,6 +1771,7 @@ name = "mudfish-engine"
 version = "0.1.1"
 dependencies = [
  "anyhow",
+ "mudfish-browser",
  "mudfish-core",
  "mudfish-fetch",
  "mudfish-frontier",
@@ -1820,7 +1821,7 @@ dependencies = [
 
 [[package]]
 name = "mudfish-python"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "mudfish-core",
  "mudfish-engine",

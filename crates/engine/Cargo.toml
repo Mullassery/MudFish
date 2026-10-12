@@ -12,10 +12,11 @@ name = "mudfish_engine"
 [dependencies]
 anyhow = "1.0.104"
 mudfish-core = { version = "0.1.1", path = "../core" }
+mudfish-browser = { version = "0.1.1", path = "../browser" }
 mudfish-fetch = { version = "0.1.1", path = "../fetch" }
 mudfish-frontier = { version = "0.1.1", path = "../frontier" }
 mudfish-parser = { version = "0.1.1", path = "../parser" }
-tokio = { version = "1.53.1", features = ["sync", "rt", "macros"] }
+tokio = { version = "1.53.1", features = ["sync", "rt", "macros", "net"] }
 tracing = "0.1.44"
 url = { version = "2.5.8", features = ["serde"] }
 uuid = { version = "1.26.1", features = ["v4"] }

@@ -4,7 +4,11 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FetchMethod {
+    /// Plain HTTP GET, no JavaScript execution.
     Http,
+    /// Fetched by first loading the page in a real headless Chrome instance
+    /// and capturing the post-JavaScript DOM (see `mudfish_browser`).
+    Browser,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

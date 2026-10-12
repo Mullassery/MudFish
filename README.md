@@ -52,9 +52,9 @@ Most crawling tools force a choice: fast-but-shallow link crawlers (recon-orient
 
 Mudfish's core principle: **deterministic crawling first, browser rendering only when required, AI reasoning only when useful.** The crawler must be able to run entirely without a browser or an LLM in the loop — those are optional enhancements layered on top of a fast, correct, safety-conscious HTTP crawl engine.
 
-## Current scope: Phase 1 (HTTP crawler MVP)
+## Current scope: Phase 1 HTTP crawler + opt-in browser rendering
 
-This repository currently implements **Phase 1 only**: a production-quality asynchronous HTTP crawler, matching the project's own phased build plan (see `ROADMAP_HONEST.md`). Browser rendering, structured/AI extraction, website graphs, and distributed crawling are deliberately not started yet — building those before the HTTP core is solid and benchmarked would violate the project's own first principle.
+This repository implements a production-quality asynchronous HTTP crawler, matching the project's own phased build plan (see `ROADMAP_HONEST.md`). Browser rendering is now implemented as an **opt-in escalation path** (`--render-js`): pages whose static HTML looks JavaScript-dependent are re-rendered in a real headless Chrome instance and parsed from the post-JS DOM (requires a Chrome/Chromium binary on the host). It is off by default, so the engine still runs entirely without a browser. Structured/AI extraction, website graphs, and distributed crawling remain not started — building those before the HTTP core is solid and benchmarked would violate the project's own first principle.
 
 ## CLI reference
 
@@ -73,6 +73,8 @@ Options:
       --max-response-bytes <BYTES>         Per-response size cap [default: 20MB]
       --no-robots                          Ignore robots.txt (only for infra you own)
       --allow-private-networks             Permit loopback/private targets (internal use only)
+      --render-js                          Re-render JS-dependent pages in headless Chrome (needs Chrome; slow)
+      --render-settle-ms <MS>              Settle time before capturing a rendered page [default: 2000]
       --output <summary|json|jsonl>        Output format [default: summary]
       --out-file <PATH>                    Write to a file instead of stdout
 ```
@@ -85,7 +87,7 @@ mudfish crawl https://example.com --depth 2 --concurrency 30 --output json > cra
 
 ## Python reference
 
-`mudfish.crawl()` (see [Getting started](#getting-started) for install) takes the same options as the CLI, as keyword arguments: `depth`, `concurrency`, `per_host_concurrency`, `same_domain`, `max_urls`, `max_duration_secs`, `timeout_secs`, `request_delay_ms`, `max_response_bytes`, `respect_robots`, `allow_private_networks`. It blocks until the crawl finishes and returns a plain `dict` — no `asyncio` integration yet, though the GIL is released while it runs so other Python threads keep going. Full option table, return-value shape, and limitations: `crates/python/README.md`.
+`mudfish.crawl()` (see [Getting started](#getting-started) for install) takes the same options as the CLI, as keyword arguments: `depth`, `concurrency`, `per_host_concurrency`, `same_domain`, `max_urls`, `max_duration_secs`, `timeout_secs`, `request_delay_ms`, `max_response_bytes`, `respect_robots`, `allow_private_networks`, `render_js`, `render_settle_ms`. It blocks until the crawl finishes and returns a typed `CrawlResult` (`pages`/`stats`/`errors` dataclasses, still dict-readable), and the GIL is released while it runs so other Python threads keep going. `mudfish.crawl_async()` (plus the reusable `mudfish.Crawler`) is an `asyncio`-friendly surface over the same engine. Full option table, object reference, and limitations: `crates/python/README.md`.
 
 ## What's working now (verified)
 
@@ -106,7 +108,7 @@ Verified by 42 Rust tests (`cargo test --workspace`: 9 core, 9+7 fetch, 6 fronti
 
 - Behavior against sites requiring authentication, cookies-based sessions, or HTTP/3 has not been exercised (HTTP/3 support is compiled in via `reqwest`'s feature flags but not benchmarked or tested here).
 - Large-crawl memory/CPU behavior (thousands of pages) has not been profiled; the architecture streams responses but has not been load-tested at that scale.
-- Distributed/multi-worker deployment, browser rendering, structured/LLM extraction, website-graph construction, and MCP/agent tooling are not implemented — see `ROADMAP_HONEST.md`.
+- Distributed/multi-worker deployment, structured/LLM extraction, website-graph construction, and MCP/agent tooling are not implemented — see `ROADMAP_HONEST.md`. Browser rendering is implemented but off by default and only exercised for the JS-dependency heuristic's escalation path; it has not been benchmarked and requires Chrome/Chromium on the host.
 
 ## vs Scrapy
 
@@ -121,7 +123,7 @@ Scrapy is the mature, widely-used OSS crawling framework this is closest to comp
 
 Methodology: both spidered the live site to depth 2 with `same_domain`/`allowed_domains` scoping, both ran to completion with 0 errors, and both landed on the same page count (a 1-page difference from a trailing-slash normalization variance between the two tools' URL dedup, not a missed/extra real page). One Mudfish run came back at 103s instead of ~6-7s; debug logging on a clean re-run showed no retries, backoff, or errors, and this machine was concurrently running several other CPU/network-heavy benchmark jobs at the time — treated as resource contention on this shared machine, not a Mudfish defect, and excluded from the median above.
 
-This is a modest, real speed difference — not a blowout — which tracks with what each tool actually is: Scrapy is a full framework (middleware pipeline, item pipelines, a huge plugin ecosystem including JS rendering via `scrapy-playwright`) carrying more per-request overhead than Mudfish's narrower, Rust-native async fetch loop. Mudfish's browser-rendering escalation ("browser only when required") is roadmapped, not built (Phase 1 is HTTP-only — see "Current scope" above), so on a JS-heavy target today, neither tool renders JS out of the box without an added dependency (Scrapy needs `scrapy-playwright`; Mudfish has no rendering path yet). Where Mudfish is currently ahead: built-in SSRF protection via post-resolution DNS filtering (Scrapy has no equivalent by default), hard per-crawl resource budgets (`--max-urls`, `--max-duration-secs`, `--max-response-bytes`), and a native Python extension with no subprocess/server hop.
+This is a modest, real speed difference — not a blowout — which tracks with what each tool actually is: Scrapy is a full framework (middleware pipeline, item pipelines, a huge plugin ecosystem including JS rendering via `scrapy-playwright`) carrying more per-request overhead than Mudfish's narrower, Rust-native async fetch loop. Mudfish's browser-rendering escalation is implemented as an opt-in path (`--render-js`, off by default — see "Current scope" above), but has not been benchmarked; on a JS-heavy target today with `--render-js` off (the default), Mudfish does not render JS, and the benchmark numbers above are pure-HTTP (Scrapy likewise needs `scrapy-playwright` to render). Where Mudfish is currently ahead: built-in SSRF protection via post-resolution DNS filtering (Scrapy has no equivalent by default), hard per-crawl resource budgets (`--max-urls`, `--max-duration-secs`, `--max-response-bytes`), and a native Python extension with no subprocess/server hop.
 
 **Bug found and fixed during this benchmark:** `--max-urls` was not actually a hard cap under concurrency — `crates/engine/src/lib.rs`'s worker loop checked `stats.fetched.load() >= max` and then popped/fetched, so with `concurrency` workers racing that check, all of them could pass before any incremented the counter. Reproduced reliably (`--max-urls 5 --concurrency 10` fetched 14 real pages instead of 5; `--max-urls 10` fetched 19). Fixed by reserving each fetch slot atomically via `compare_exchange_weak` immediately before the fetch is made (releasing the reservation if the fetch itself errors, since `urls_fetched` counts successes only) — verified the cap is now exact at 5/10/20, added a concurrency-based regression test (`max_urls_is_a_hard_cap_under_concurrency` in `apps/mudfish/tests/crawl.rs`), and the full 43-test suite passes.
 

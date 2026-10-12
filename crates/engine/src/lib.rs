@@ -2,10 +2,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
+use mudfish_browser::BrowserRenderer;
 use mudfish_core::{CrawlConfig, CrawlErrorRecord, CrawlResult, CrawlStats, FetchMethod, Page};
 use mudfish_fetch::{DomainHealthTracker, HttpFetcher, PolitenessManager, RobotsManager};
 use mudfish_frontier::{DepthPriority, Frontier};
-use mudfish_parser::parse_html;
+use mudfish_parser::{parse_html, static_html_looks_js_dependent};
 use tokio::sync::{Mutex, Semaphore};
 use tracing::{debug, warn};
 use uuid::Uuid;
@@ -35,6 +36,41 @@ fn read_scope_host(lock: &RwLock<String>) -> String {
     lock.read()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .clone()
+}
+
+/// Best-effort pre-render SSRF check: resolves `url`'s host and refuses to
+/// hand it to the browser if any resolved address is loopback/private/
+/// link-local (unless `allow_private` is set). The regular HTTP path is
+/// guarded by `mudfish_fetch`'s resolver-based SSRF filter; the headless
+/// browser navigates directly, so it needs its own check.
+///
+/// This is necessarily weaker than the HTTP path's per-connection check: it
+/// is a time-of-check/time-of-use pre-check done before Chrome resolves the
+/// host itself, so a DNS-rebinding host could still slip through. Closing
+/// that gap needs a proxying/DNS-pinning solution, not another version of
+/// this check — treat this as a safety net, not a hard guarantee.
+async fn render_target_is_blocked(url: &url::Url, allow_private: bool) -> bool {
+    if allow_private {
+        return false;
+    }
+    let Some(host) = url.host_str() else {
+        return true;
+    };
+    let port = url.port_or_known_default().unwrap_or(443);
+    match tokio::net::lookup_host((host, port)).await {
+        Ok(addrs) => {
+            let mut resolved_any = false;
+            for addr in addrs {
+                resolved_any = true;
+                if mudfish_fetch::security::is_blocked_ip(addr.ip()) {
+                    return true;
+                }
+            }
+            // Couldn't resolve anything: don't render.
+            !resolved_any
+        }
+        Err(_) => true,
+    }
 }
 
 #[derive(Default)]
@@ -95,6 +131,23 @@ pub async fn crawl(config: &CrawlConfig) -> anyhow::Result<CrawlResult> {
     let stats = Arc::new(StatsCounter::default());
     let global_sem = Arc::new(Semaphore::new(config.concurrency.max(1)));
 
+    // Optional JS-rendering fallback: one shared headless-Chrome instance,
+    // launched once and reused across workers (see `BrowserRenderer`'s doc
+    // comment on why it must not be launched per page). A launch failure
+    // (no Chrome binary on the host) is non-fatal -- we log and fall back to
+    // static HTML for the whole crawl rather than aborting it.
+    let renderer = if config.render_js {
+        match BrowserRenderer::launch().await {
+            Ok(r) => Some(Arc::new(r)),
+            Err(e) => {
+                warn!(error = %e, "render_js requested but headless Chrome could not be launched; falling back to static HTML");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     let deadline = config.max_duration.map(|d| started_at + d);
     let max_urls = config.max_urls;
 
@@ -111,6 +164,7 @@ pub async fn crawl(config: &CrawlConfig) -> anyhow::Result<CrawlResult> {
         let scope_host = scope_host.clone();
         let global_sem = global_sem.clone();
         let health = health.clone();
+        let renderer = renderer.clone();
 
         workers.push(tokio::spawn(async move {
             'worker: loop {
@@ -201,9 +255,48 @@ pub async fn crawl(config: &CrawlConfig) -> anyhow::Result<CrawlResult> {
                             .map(|ct| ct.contains("text/html"))
                             .unwrap_or(false);
 
+                        let mut fetched_via = FetchMethod::Http;
                         let (metadata, links) = if is_html {
                             let body_str = String::from_utf8_lossy(&resp.body).into_owned();
-                            let parsed = parse_html(&body_str, &resp.final_url);
+
+                            // Escalate to a real browser render only for pages
+                            // whose static HTML looks JavaScript-dependent, so
+                            // the expensive render stays a fallback rather than
+                            // the default path (see `render_js`).
+                            let html_for_parse = match &renderer {
+                                Some(renderer) if static_html_looks_js_dependent(&body_str) => {
+                                    // The browser path doesn't go through
+                                    // reqwest's SSRF resolver, so pre-check the
+                                    // resolved addresses here before navigating
+                                    // Chrome at an attacker-influenced URL.
+                                    if render_target_is_blocked(
+                                        &resp.final_url,
+                                        config.allow_private_networks,
+                                    )
+                                    .await
+                                    {
+                                        warn!(url = %item.url, "skipping browser render: target resolves to a blocked (loopback/private/link-local) address");
+                                        body_str
+                                    } else {
+                                        match renderer
+                                            .render(&resp.final_url, config.render_settle)
+                                            .await
+                                        {
+                                            Ok(rendered) => {
+                                                fetched_via = FetchMethod::Browser;
+                                                rendered.html
+                                            }
+                                            Err(e) => {
+                                                warn!(url = %item.url, error = %e, "browser render failed; using static HTML");
+                                                body_str
+                                            }
+                                        }
+                                    }
+                                }
+                                _ => body_str,
+                            };
+
+                            let parsed = parse_html(&html_for_parse, &resp.final_url);
                             (parsed.metadata, parsed.links)
                         } else {
                             Default::default()
@@ -244,7 +337,7 @@ pub async fn crawl(config: &CrawlConfig) -> anyhow::Result<CrawlResult> {
                             metadata,
                             links,
                             body_bytes: resp.body.len() as u64,
-                            fetched_via: FetchMethod::Http,
+                            fetched_via,
                         };
                         pages.lock().await.push(page);
                     }

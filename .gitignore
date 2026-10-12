@@ -2,6 +2,9 @@
 **/*.rs.bk
 *.pdb
 
+# macOS
+.DS_Store
+
 # Python bindings build artifacts
 .venv/
 __pycache__/

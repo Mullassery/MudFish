@@ -38,6 +38,15 @@ pub struct CrawlConfig {
     /// internal infrastructure or local test fixtures; never flip this on
     /// for crawls of arbitrary/untrusted URLs.
     pub allow_private_networks: bool,
+    /// When `true`, a page whose static HTML looks JavaScript-dependent (see
+    /// `mudfish_parser::static_html_looks_js_dependent`) is re-fetched through
+    /// a real headless Chrome instance and parsed from the rendered DOM
+    /// instead. Off by default: a browser render is far heavier than a plain
+    /// HTTP fetch, and requires a Chrome/Chromium binary on the host.
+    pub render_js: bool,
+    /// How long a rendered page is allowed to settle (network idle wait)
+    /// before its DOM is captured, when `render_js` is enabled.
+    pub render_settle: Duration,
 }
 
 impl Default for CrawlConfig {
@@ -67,6 +76,8 @@ impl Default for CrawlConfig {
             default_headers: Vec::new(),
             normalization: NormalizationOptions::default(),
             allow_private_networks: false,
+            render_js: false,
+            render_settle: Duration::from_secs(2),
         }
     }
 }

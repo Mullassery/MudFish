@@ -80,6 +80,17 @@ pub struct CrawlArgs {
     #[arg(long)]
     pub allow_private_networks: bool,
 
+    /// Re-render JavaScript-dependent pages with a real headless Chrome
+    /// instance and parse the post-JS DOM. Requires Chrome/Chromium on the
+    /// host; much slower than a plain HTTP fetch, so off by default.
+    #[arg(long)]
+    pub render_js: bool,
+
+    /// When `--render-js` is set, how long (in milliseconds) a rendered page
+    /// is allowed to settle before its DOM is captured.
+    #[arg(long, default_value_t = 2000)]
+    pub render_settle_ms: u64,
+
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Summary)]
     pub output: OutputFormat,

@@ -19,6 +19,8 @@ fn args_for(url: String) -> CrawlArgs {
         // wiremock binds to 127.0.0.1, which the crawler's SSRF guard
         // blocks by design; these are trusted local test fixtures.
         allow_private_networks: true,
+        render_js: false,
+        render_settle_ms: 2000,
         output: OutputFormat::Json,
         out_file: None,
     }
@@ -198,9 +200,7 @@ async fn max_urls_is_a_hard_cap_under_concurrency() {
         .collect();
     Mock::given(method("GET"))
         .and(path("/"))
-        .respond_with(html_response(&format!(
-            "<html><body>{links}</body></html>"
-        )))
+        .respond_with(html_response(&format!("<html><body>{links}</body></html>")))
         .mount(&server)
         .await;
     for i in 0..n {
@@ -219,7 +219,8 @@ async fn max_urls_is_a_hard_cap_under_concurrency() {
     let result = crawl::execute(&args).await.unwrap();
 
     assert_eq!(
-        result.stats.urls_fetched, 5,
+        result.stats.urls_fetched,
+        5,
         "max_urls=5 must cap urls_fetched at exactly 5 even with 10 workers \
          racing a 21-page fan-out, got {} pages: {:?}",
         result.stats.urls_fetched,
