@@ -1,5 +1,7 @@
 # Mudfish Crawler
 
+[![Grapify](https://img.shields.io/badge/Grapify-Code%20Scan-purple)](https://grapify.ai)
+
 [![CI](https://github.com/Mullassery/MudFish/actions/workflows/ci.yml/badge.svg)](https://github.com/Mullassery/MudFish/actions/workflows/ci.yml)
 
 A Rust-native web crawling and intelligence engine — deterministic crawling first, browser rendering only when required, AI reasoning only when useful.
