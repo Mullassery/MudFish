@@ -1,16 +1,46 @@
-# Mudfish Crawler
-
-[![Graphify](https://img.shields.io/badge/Graphify-knowledge%20graph-blue)](https://github.com/Graphify-Labs/graphify)
-
-[![CI](https://github.com/Mullassery/MudFish/actions/workflows/ci.yml/badge.svg)](https://github.com/Mullassery/MudFish/actions/workflows/ci.yml)
+# MudFish
 
 A Rust-native web crawling and intelligence engine — deterministic crawling first, browser rendering only when required, AI reasoning only when useful.
 
-Mudfish is not a clone of any existing crawler or scraping product. It is being built from first principles as a wedge across three ideas that are usually separate products: fast async HTTP crawling, developer-facing structured extraction, and automatic API/website intelligence discovery.
+[![CI](https://github.com/Mullassery/MudFish/actions/workflows/ci.yml/badge.svg)](https://github.com/Mullassery/MudFish/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![mudfish on PyPI](https://img.shields.io/pypi/v/mudfish.svg?label=mudfish)](https://pypi.org/project/mudfish/)
 
-## Getting started
+## What it is
 
-Pick whichever fits your stack — both call the same Rust engine.
+Mudfish is a fast, safety-conscious asynchronous web crawler built in Rust and exposed through both a CLI and native Python bindings (via PyO3 — no subprocess or server hop). Its core principle: run entirely without a browser or an LLM by default; browser rendering (headless Chrome) is an opt-in escalation path for JavaScript-dependent pages. The engine supports bounded budgets, post-resolution SSRF protection, robots.txt and per-host politeness, URL normalization, and streaming response-cap enforcement. It is Phase 1 of a larger crawling/intelligence platform — the current scope is a production-quality HTTP crawler plus opt-in rendering, not the full vision.
+
+## Features / Highlights
+
+- **Bounded, budget-safe crawling** — hard caps on URLs fetched, wall-clock duration, and per-response bytes, enforced atomically under concurrency.
+- **SSRF protection where it counts** — a custom DNS resolver filters resolved addresses (loopback/private/link-local/metadata) *after* resolution, defeating DNS-rebinding that a hostname blocklist can't catch.
+- **Polite by default** — robots.txt honored with Google-documented 2xx/4xx/5xx handling and cached TTL, per-host request spacing, and per-host concurrency caps.
+- **Modern HTTP** — gzip/brotli/deflate/zstd, HTTP/2, redirects, retries with exponential backoff + jitter, `Retry-After` support, and body caps enforced by streaming.
+- **Correct URL handling** — fragment/default-port stripping, tracking-parameter removal (`utm_*`, `gclid`, …), duplicate-slash collapsing, and same-domain scoping that follows the seed's *resolved* host through redirects.
+- **Pluggable frontier priority** — depth-based BFS-like scheduling by default (not FIFO), URL-dedup via normalized fingerprinting, and a correctness-tested termination protocol (drain, hard stop, and race-free shutdown).
+- **Optional browser rendering** — `--render-js` re-renders JS-dependent pages in a real headless Chrome and parses the post-JS DOM (off by default; needs Chrome on the host).
+- **Native Python surface** — `mudfish.crawl()` (blocking, GIL released) and `crawl_async()`/`Crawler` over the same Rust engine, returning typed `CrawlResult`/`Page`/`CrawlStats` objects that remain dict-readable.
+
+## Who it's for / Use cases
+
+- **Quick site audits** — `mudfish crawl <url> --depth 3 --output json` returns every reachable page's status, title, and outbound links for broken/orphaned-link checks.
+- **Structured data collection in Python** — crawl into a dict/crawl result straight from a notebook or pipeline, ready for pandas, a database insert, or RAG ingestion.
+- **Safe crawling of untrusted URLs** — link-preview and content-moderation pipelines can hand it arbitrary user-supplied URLs without SSRF risk against internal networks.
+- **Budget-bound crawl jobs** — hard `--max-urls`/`--max-duration-secs`/`--max-response-bytes` so nothing runs away with CPU, bandwidth, or your bill.
+
+## What it is not
+
+- **Not a browser-first scraper.** JS rendering is opt-in and off by default; it has not been benchmarked and requires a Chrome/Chromium binary on the host.
+- **Not the full platform yet.** Structured/AI extraction, website graphs, distributed crawling, and MCP/agent tooling are **not implemented** (that's later-phase work — the roadmap deliberately refuses to build them before the HTTP core is solid).
+- **No auth/session handling yet.** Behavior against sites requiring authentication, cookies-based sessions, or HTTP/3 has not been exercised (HTTP/3 is compiled in but untested).
+- **Not load-tested at scale.** Large-crawl memory/CPU behavior (thousands of pages) has not been profiled.
+- **Early-stage and single-maintainer.** Phase 1 only; not "production-ready" in the sense of at-scale operation, load testing, or independent security review. Distribution is from the maintainer's machine (single-platform wheels — check PyPI for platform coverage; others build from source).
+
+## Project status
+
+`mudfish` 0.2.0 on PyPI, workspace `v0.1.1`. Phase 1 (HTTP crawler + opt-in browser rendering) is built and verified by 42 Rust tests plus 4 Python-binding tests, and manually validated against live sites (example.com, rust-lang.org). In a head-to-head benchmark against Scrapy 2.13.4 on the same live site it was ~1.3x faster at equal scope. See [ROADMAP_HONEST.md](ROADMAP_HONEST.md) for the full honest breakdown of built/verified/broken.
+
+## Installation
 
 **Python** (fastest way to try it):
 
@@ -18,16 +48,7 @@ Pick whichever fits your stack — both call the same Rust engine.
 pip install mudfish
 ```
 
-```python
-import mudfish
-
-result = mudfish.crawl("https://example.com", depth=2, concurrency=30)
-print(result["stats"])
-for page in result["pages"]:
-    print(page["status_code"], page["url"], page["metadata"]["title"])
-```
-
-**Rust CLI** (requires a recent stable Rust toolchain, developed against 1.97):
+**Rust CLI** (requires a recent stable Rust toolchain):
 
 ```bash
 git clone https://github.com/Mullassery/MudFish.git
@@ -36,29 +57,28 @@ cargo build --release
 ./target/release/mudfish crawl https://example.com --depth 2 --output json
 ```
 
-Either way you get the same result shape back: a crawl ID, every page fetched (status, title, meta description, canonical URL, outbound links), any errors, and aggregate stats (URLs discovered/fetched/skipped, bytes, duration).
+## Quick start
 
-## Use cases
+```python
+import mudfish
 
-- **Quick site audit.** `mudfish crawl https://yoursite.com --depth 3 --output json` and get back every reachable page's status code, title, and outbound links — useful for finding broken links, orphaned pages, or checking what a search-engine-style crawler would actually see.
-- **Structured data collection from Python.** `mudfish.crawl(url)` in a notebook or pipeline script, no subprocess/server to manage — the dict comes back ready for `pandas`, a database insert, or a RAG ingestion step.
-- **Safe crawling of untrusted/third-party URLs.** Point it at user-submitted or arbitrary external URLs (e.g. a link-preview service, a content-moderation pipeline) without worrying about SSRF against your own internal network — loopback/private/link-local/cloud-metadata addresses are refused by design, verified via actual DNS resolution rather than a hostname blocklist.
-- **Bounded, budget-safe crawling.** Every crawl has hard limits (`--max-urls`, `--max-duration-secs`, `--max-response-bytes`) so a misconfigured depth or an unexpectedly large site can't run away with your CPU, bandwidth, or bill.
-- **Polite crawling of sites you don't control.** robots.txt is honored by default, with per-host rate limiting and concurrency caps, so you can crawl third-party sites without hammering them or getting IP-banned.
+result = mudfish.crawl("https://example.com", depth=2, concurrency=30)
+print(result.stats.urls_fetched, result.stats.duration_secs)
+for page in result:                       # CrawlResult is iterable over its pages
+    print(page.status_code, page.url, page.title)
+```
 
-## Problem
+Or from the CLI:
 
-Most crawling tools force a choice: fast-but-shallow link crawlers (recon-oriented), or slow browser-based scrapers that render everything by default. Neither gives you a single, safe, resource-bounded engine that does cheap HTTP crawling by default and only escalates to a browser (or an LLM) when the page actually needs it.
+```bash
+mudfish crawl https://example.com --depth 2 --concurrency 30 --output json > crawl.json
+```
 
-## Solution
+Either way you get the same result shape: a crawl ID, every page fetched (status, title, meta description, canonical URL, outbound links), any errors, and aggregate stats (URLs discovered/fetched/skipped, bytes, duration).
 
-Mudfish's core principle: **deterministic crawling first, browser rendering only when required, AI reasoning only when useful.** The crawler must be able to run entirely without a browser or an LLM in the loop — those are optional enhancements layered on top of a fast, correct, safety-conscious HTTP crawl engine.
+## Usage
 
-## Current scope: Phase 1 HTTP crawler + opt-in browser rendering
-
-This repository implements a production-quality asynchronous HTTP crawler, matching the project's own phased build plan (see `ROADMAP_HONEST.md`). Browser rendering is now implemented as an **opt-in escalation path** (`--render-js`): pages whose static HTML looks JavaScript-dependent are re-rendered in a real headless Chrome instance and parsed from the post-JS DOM (requires a Chrome/Chromium binary on the host). It is off by default, so the engine still runs entirely without a browser. Structured/AI extraction, website graphs, and distributed crawling remain not started — building those before the HTTP core is solid and benchmarked would violate the project's own first principle.
-
-## CLI reference
+### CLI
 
 ```bash
 mudfish crawl <URL> [OPTIONS]
@@ -81,66 +101,32 @@ Options:
       --out-file <PATH>                    Write to a file instead of stdout
 ```
 
-Example:
+### Python
 
-```bash
-mudfish crawl https://example.com --depth 2 --concurrency 30 --output json > crawl.json
-```
+`mudfish.crawl()` takes the same options as keyword arguments (`depth`, `concurrency`, `per_host_concurrency`, `same_domain`, `max_urls`, `max_duration_secs`, `timeout_secs`, `request_delay_ms`, `max_response_bytes`, `respect_robots`, `allow_private_networks`, `render_js`, `render_settle_ms`). It blocks until the crawl finishes (or a budget is hit) and returns a typed `CrawlResult`; the GIL is released while it runs. `mudfish.crawl_async()` (plus the reusable `mudfish.Crawler`) is the `asyncio`-friendly surface over the same engine. Full object reference and limitations: `crates/python/README.md`.
 
-## Python reference
+## Documentation
 
-`mudfish.crawl()` (see [Getting started](#getting-started) for install) takes the same options as the CLI, as keyword arguments: `depth`, `concurrency`, `per_host_concurrency`, `same_domain`, `max_urls`, `max_duration_secs`, `timeout_secs`, `request_delay_ms`, `max_response_bytes`, `respect_robots`, `allow_private_networks`, `render_js`, `render_settle_ms`. It blocks until the crawl finishes and returns a typed `CrawlResult` (`pages`/`stats`/`errors` dataclasses, still dict-readable), and the GIL is released while it runs so other Python threads keep going. `mudfish.crawl_async()` (plus the reusable `mudfish.Crawler`) is an `asyncio`-friendly surface over the same engine. Full option table, object reference, and limitations: `crates/python/README.md`.
-
-## What's working now (verified)
-
-Verified by 42 Rust tests (`cargo test --workspace`: 9 core, 9+7 fetch, 6 frontier, 7 parser, 1 engine, 3 CLI integration) plus 4 Python-binding tests (`pytest` in `crates/python`), plus manual crawls against live sites (example.com, rust-lang.org):
-
-- Async HTTP crawling with a bounded worker pool (`tokio`), global + per-host concurrency limits.
-- URL frontier: pluggable priority scheduling (depth-based by default, not FIFO), URL-level dedup via normalized fingerprinting, and a correctness-tested termination protocol (workers shut down cleanly on drain, on a hard `stop()` signal for budget limits, or hang-free under concurrent load — see `crates/frontier`'s test suite for the specific race conditions this closes).
-- URL normalization: fragment stripping, default-port removal, tracking-parameter stripping (`utm_*`, `gclid`, etc.), duplicate-slash collapsing — configurable, and deliberately does **not** strip arbitrary query parameters, since many sites key content identity on them.
-- robots.txt handling (fetch, cache with TTL, per-Google's documented 2xx/4xx/5xx status handling) and per-host politeness (request spacing + concurrency caps).
-- HTTP fetch layer: gzip/brotli/deflate/zstd, HTTP/2, redirects, retries with exponential backoff + jitter, `Retry-After` support, and a hard cap on response size enforced by streaming (not trusting `Content-Length`, which is absent or lies for chunked/compressed responses).
-- SSRF protection: a custom DNS resolver filters out loopback/private/link-local/multicast-resolved addresses *after* resolution, which is what actually stops DNS-rebinding SSRF (a public hostname resolving to `127.0.0.1` or a cloud metadata IP) — a hostname-string blocklist alone cannot catch that.
-- HTML parsing: link extraction (with relative-URL resolution, anchor text, `rel`), title/meta-description/canonical extraction, non-crawlable scheme filtering (`mailto:`, `javascript:`, etc.), and graceful handling of malformed HTML.
-- Same-domain scoping that correctly follows the seed's *resolved* host through redirects (e.g. `www.example.com` → `example.com`) rather than the literal host typed on the command line — this was a real bug caught during manual testing against rust-lang.org and is now covered by a regression test.
-- JSON/JSONL/human-readable summary output.
-- Python bindings (`pip install mudfish`) exposing the same crawl engine as a native extension — verified against a local test server (basic crawl, same-domain link-following, invalid-URL error handling) and manually against live sites including the SSRF guard.
-
-## What's built but not verified
-
-- Behavior against sites requiring authentication, cookies-based sessions, or HTTP/3 has not been exercised (HTTP/3 support is compiled in via `reqwest`'s feature flags but not benchmarked or tested here).
-- Large-crawl memory/CPU behavior (thousands of pages) has not been profiled; the architecture streams responses but has not been load-tested at that scale.
-- Distributed/multi-worker deployment, structured/LLM extraction, website-graph construction, and MCP/agent tooling are not implemented — see `ROADMAP_HONEST.md`. Browser rendering is implemented but off by default and only exercised for the JS-dependency heuristic's escalation path; it has not been benchmarked and requires Chrome/Chromium on the host.
-
-## vs Scrapy
-
-Scrapy is the mature, widely-used OSS crawling framework this is closest to competing with, so we ran both against the same real, live site — [quotes.toscrape.com](https://quotes.toscrape.com/) (a public scraping-practice site with no `robots.txt` restrictions, maintained by Scrapy's own creators, Zyte). Same scope for both: depth 2, same-domain only, concurrency 10, extracting page title + outbound links.
-
-| | Mudfish (`pip install mudfish`) | Scrapy 2.13.4 |
-|---|---|---|
-| Pages crawled | 151 | 152 |
-| Errors | 0 | 0 |
-| Median wall-clock (4 clean runs each) | **~6.8s** | ~9.1s |
-| Relative speed | **~1.3x faster** | baseline |
-
-Methodology: both spidered the live site to depth 2 with `same_domain`/`allowed_domains` scoping, both ran to completion with 0 errors, and both landed on the same page count (a 1-page difference from a trailing-slash normalization variance between the two tools' URL dedup, not a missed/extra real page). One Mudfish run came back at 103s instead of ~6-7s; debug logging on a clean re-run showed no retries, backoff, or errors, and this machine was concurrently running several other CPU/network-heavy benchmark jobs at the time — treated as resource contention on this shared machine, not a Mudfish defect, and excluded from the median above.
-
-This is a modest, real speed difference — not a blowout — which tracks with what each tool actually is: Scrapy is a full framework (middleware pipeline, item pipelines, a huge plugin ecosystem including JS rendering via `scrapy-playwright`) carrying more per-request overhead than Mudfish's narrower, Rust-native async fetch loop. Mudfish's browser-rendering escalation is implemented as an opt-in path (`--render-js`, off by default — see "Current scope" above), but has not been benchmarked; on a JS-heavy target today with `--render-js` off (the default), Mudfish does not render JS, and the benchmark numbers above are pure-HTTP (Scrapy likewise needs `scrapy-playwright` to render). Where Mudfish is currently ahead: built-in SSRF protection via post-resolution DNS filtering (Scrapy has no equivalent by default), hard per-crawl resource budgets (`--max-urls`, `--max-duration-secs`, `--max-response-bytes`), and a native Python extension with no subprocess/server hop.
-
-**Bug found and fixed during this benchmark:** `--max-urls` was not actually a hard cap under concurrency — `crates/engine/src/lib.rs`'s worker loop checked `stats.fetched.load() >= max` and then popped/fetched, so with `concurrency` workers racing that check, all of them could pass before any incremented the counter. Reproduced reliably (`--max-urls 5 --concurrency 10` fetched 14 real pages instead of 5; `--max-urls 10` fetched 19). Fixed by reserving each fetch slot atomically via `compare_exchange_weak` immediately before the fetch is made (releasing the reservation if the fetch itself errors, since `urls_fetched` counts successes only) — verified the cap is now exact at 5/10/20, added a concurrency-based regression test (`max_urls_is_a_hard_cap_under_concurrency` in `apps/mudfish/tests/crawl.rs`), and the full 43-test suite passes.
-
-## Architecture
-
-See `ARCHITECTURE.md` for the workspace layout and the reasoning behind the key design decisions (frontier termination protocol, SSRF resolver design, same-domain scoping).
+- [ARCHITECTURE.md](ARCHITECTURE.md) — workspace layout and the reasoning behind the key design decisions (frontier termination, SSRF resolver, same-domain scoping)
+- [crates/python/README.md](crates/python/README.md) — full Python API reference, object table, and limitations
+- [ROADMAP_HONEST.md](ROADMAP_HONEST.md) — status buckets, what's verified, what's known-broken or missing
+- [CONTRIBUTING.md](CONTRIBUTING.md) — build/test setup and what a good PR looks like
+- [SECURITY.md](SECURITY.md) — security posture and how to report a vulnerability
 
 ## Contributing
 
-See `CONTRIBUTING.md` for build/test setup and what a good pull request looks like. Security issues: see `SECURITY.md` (please don't file those as public issues). Behavior changes are tracked in `CHANGELOG.md`.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Security issues: see [SECURITY.md](SECURITY.md) — please don't file those as public issues. Behavior changes are tracked in [CHANGELOG.md](CHANGELOG.md).
 
-## Status
+## Related projects
 
-Early-stage, single-maintainer, Phase 1 only (see "Current scope" above and `ROADMAP_HONEST.md` for the full honest breakdown of what's built, what's verified, and what's known-broken or missing). Not "production-ready" in the sense of having been run at scale, load-tested, or independently security-reviewed — see `SECURITY.md` and `ROADMAP_HONEST.md`'s technical debt section for specifics.
+- [PrismNote](https://github.com/Mullassery/prismnote) — Jupyter-compatible data-science notebook; a natural destination for crawl results headed into pandas or RAG
+- [PyReverseETL](https://github.com/Mullassery/PyReverseETL) — quality-validated data activation with audit trail and lineage, for moving collected data where it's needed
+- [PyStreamMCP](https://github.com/Mullassery/PyStreamMCP) — intelligence layer for AI agents: query planning, context discovery, cost optimization
+- [PyAPICheck](https://github.com/Mullassery/PyAPICheck) — transparent API security discovery with real-traffic cross-referencing, a sibling security/observation tool
+- [MessageBirds](https://github.com/Mullassery/MessageBirds) — open-source, event-driven Customer Data & Engagement Platform (Rust + TypeScript)
+
+[Browse all projects →](https://github.com/Mullassery?tab=repositories)
 
 ## License
 
-Apache-2.0. See `LICENSE`.
+Apache-2.0. See [LICENSE](LICENSE).
