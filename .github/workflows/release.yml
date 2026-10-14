@@ -1,0 +1,164 @@
+name: Release
+
+# Publishes the Python package (`mudfish`) to PyPI.
+#
+# Triggered by pushing a `v*` tag (the normal release path), or manually via
+# workflow_dispatch to rebuild/backfill a specific tag's wheels (e.g. to add
+# the non-macOS platforms to an already-published version).
+#
+# Auth: PyPI Trusted Publishing (OIDC) — no API token is stored. This requires
+# a one-time trusted-publisher entry on pypi.org for this project:
+#   Owner:       Mullassery
+#   Repository:  MudFish
+#   Workflow:    release.yml
+#   Environment: pypi
+#
+# `skip-existing: true` makes publishing idempotent and lets a re-run add only
+# the platform wheels that are missing, without failing on already-uploaded
+# files.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Tag or ref to build and publish (e.g. v0.2.1)"
+        required: true
+        default: "v0.2.1"
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Wheel (linux ${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [x86_64, aarch64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          manylinux: auto
+          working-directory: crates/python
+          args: --release --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-linux-${{ matrix.target }}
+          path: crates/python/dist
+
+  musllinux:
+    name: Wheel (musllinux ${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [x86_64, aarch64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          manylinux: musllinux_1_2
+          working-directory: crates/python
+          args: --release --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-musllinux-${{ matrix.target }}
+          path: crates/python/dist
+
+  windows:
+    name: Wheel (windows ${{ matrix.target }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [x64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          working-directory: crates/python
+          args: --release --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-windows-${{ matrix.target }}
+          path: crates/python/dist
+
+  macos:
+    name: Wheel (macos ${{ matrix.target }})
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [x86_64, aarch64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          working-directory: crates/python
+          args: --release --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-macos-${{ matrix.target }}
+          path: crates/python/dist
+
+  sdist:
+    name: sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          working-directory: crates/python
+          args: --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: crates/python/dist
+
+  publish:
+    name: Publish to PyPI
+    needs: [linux, musllinux, windows, macos, sdist]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write # OIDC for PyPI Trusted Publishing
+      contents: write # create/update the GitHub Release on a tag push
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "*"
+          merge-multiple: true
+          path: dist
+      - name: Show artifacts
+        run: ls -la dist
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+          skip-existing: true
+      - name: Attach artifacts to the GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
