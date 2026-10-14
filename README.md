@@ -38,7 +38,7 @@ Mudfish is a fast, safety-conscious asynchronous web crawler built in Rust and e
 
 ## Project status
 
-`mudfish` 0.2.0 on PyPI, workspace `v0.1.1`. Phase 1 (HTTP crawler + opt-in browser rendering) is built and verified by 42 Rust tests plus 4 Python-binding tests, and manually validated against live sites (example.com, rust-lang.org). In a head-to-head benchmark against Scrapy 2.13.4 on the same live site it was ~1.3x faster at equal scope. See [ROADMAP_HONEST.md](ROADMAP_HONEST.md) for the full honest breakdown of built/verified/broken.
+`mudfish` 0.2.1 on PyPI, workspace `v0.1.1`. Phase 1 (HTTP crawler + opt-in browser rendering) is built and verified by 42 Rust tests plus 4 Python-binding tests, and manually validated against live sites (example.com, rust-lang.org). In a head-to-head benchmark against Scrapy 2.13.4 on the same live site it was ~1.3x faster at equal scope. See [ROADMAP_HONEST.md](ROADMAP_HONEST.md) for the full honest breakdown of built/verified/broken.
 
 ## Installation
 

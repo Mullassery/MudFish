@@ -1821,7 +1821,7 @@ dependencies = [
 
 [[package]]
 name = "mudfish-python"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "mudfish-core",
  "mudfish-engine",
