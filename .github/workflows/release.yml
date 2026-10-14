@@ -82,7 +82,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [x64, arm64]
+        target: [x64, aarch64-pc-windows-msvc]
     steps:
       - uses: actions/checkout@v4
         with:
