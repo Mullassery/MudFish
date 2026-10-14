@@ -2,6 +2,8 @@ use mudfish_core::{Link, PageMetadata};
 use scraper::{Html, Selector};
 use url::Url;
 
+pub mod adaptive;
+
 #[derive(Debug, Clone, Default)]
 pub struct ParsedPage {
     pub metadata: PageMetadata,
