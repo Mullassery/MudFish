@@ -49,7 +49,7 @@ jobs:
           manylinux: auto
           working-directory: crates/python
           args: --release --out dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-linux-${{ matrix.target }}
           path: crates/python/dist
@@ -71,7 +71,7 @@ jobs:
           manylinux: musllinux_1_2
           working-directory: crates/python
           args: --release --out dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-musllinux-${{ matrix.target }}
           path: crates/python/dist
@@ -92,7 +92,7 @@ jobs:
           target: ${{ matrix.target }}
           working-directory: crates/python
           args: --release --out dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-windows-${{ matrix.target }}
           path: crates/python/dist
@@ -113,7 +113,7 @@ jobs:
           target: ${{ matrix.target }}
           working-directory: crates/python
           args: --release --out dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-macos-${{ matrix.target }}
           path: crates/python/dist
@@ -130,7 +130,7 @@ jobs:
           command: sdist
           working-directory: crates/python
           args: --out dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sdist
           path: crates/python/dist
