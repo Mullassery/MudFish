@@ -6,12 +6,12 @@ name: Release
 # workflow_dispatch to rebuild/backfill a specific tag's wheels (e.g. to add
 # the non-macOS platforms to an already-published version).
 #
-# Auth: PyPI Trusted Publishing (OIDC) — no API token is stored. This requires
-# a one-time trusted-publisher entry on pypi.org for this project:
-#   Owner:       Mullassery
-#   Repository:  MudFish
-#   Workflow:    release.yml
-#   Environment: pypi
+# Auth: PyPI API token stored in the repository secret `PYPI_API_TOKEN`
+# (username `__token__`). `pypa/gh-action-pypi-publish` uses the token when
+# `password` is provided and falls back to OIDC Trusted Publishing otherwise.
+# (To switch to Trusted Publishing later, delete the `password` input and
+# register: Owner=Mullassery, Repo=MudFish, Workflow=release.yml,
+# Environment=pypi.)
 #
 # `skip-existing: true` makes publishing idempotent and lets a re-run add only
 # the platform wheels that are missing, without failing on already-uploaded
@@ -139,9 +139,7 @@ jobs:
     name: Publish to PyPI
     needs: [linux, musllinux, windows, macos, sdist]
     runs-on: ubuntu-latest
-    environment: pypi
     permissions:
-      id-token: write # OIDC for PyPI Trusted Publishing
       contents: write # create/update the GitHub Release on a tag push
     steps:
       - uses: actions/download-artifact@v4
@@ -154,6 +152,8 @@ jobs:
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
+          user: __token__
+          password: ${{ secrets.PYPI_API_TOKEN }}
           packages-dir: dist
           skip-existing: true
       - name: Attach artifacts to the GitHub Release
