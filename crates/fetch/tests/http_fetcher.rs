@@ -181,6 +181,26 @@ fn describe(result: Result<HttpFetcher, mudfish_fetch::FetchError>) -> String {
 }
 
 #[tokio::test]
+async fn blocks_ip_literal_hosts_without_touching_network() {
+    // Default config has `allow_private_networks: false`, so the SSRF guard
+    // is active. These URLs are rejected by the URL-level pre-check before
+    // any connection is attempted (nothing listens on these addresses).
+    let fetcher = HttpFetcher::new(&CrawlConfig::default()).unwrap();
+    for raw in [
+        "http://127.0.0.1/",
+        "http://169.254.169.254/latest/meta-data/",
+        "http://[::1]/",
+    ] {
+        let url = Url::parse(raw).unwrap();
+        let err = fetcher.fetch(&url).await.unwrap_err();
+        assert!(
+            matches!(err, mudfish_fetch::FetchError::PolicyBlocked(_)),
+            "expected PolicyBlocked for {raw}, got {err}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn politeness_manager_spaces_out_requests() {
     let politeness = PolitenessManager::new(Duration::from_millis(100), 4);
     let start = std::time::Instant::now();

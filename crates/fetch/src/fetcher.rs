@@ -35,18 +35,36 @@ pub struct HttpFetcher {
     client: reqwest::Client,
     max_response_bytes: u64,
     max_retries: u32,
+    /// Whether the SSRF guard is active. The DNS resolver hook covers
+    /// hostnames, but reqwest never calls it for IP-literal hosts, so the
+    /// same policy has to be re-applied at the URL level (see
+    /// `security::ip_literal_is_blocked`).
+    guard_ssrf: bool,
 }
 
 impl HttpFetcher {
     pub fn new(config: &CrawlConfig) -> Result<Self, FetchError> {
+        let guard_ssrf = !config.allow_private_networks;
+        let max_redirects = config.max_redirects as usize;
         let mut builder = reqwest::Client::builder()
             .user_agent(config.user_agent.clone())
-            .redirect(reqwest::redirect::Policy::limited(
-                config.max_redirects as usize,
-            ))
             .timeout(config.request_timeout);
-        if !config.allow_private_networks {
-            builder = builder.dns_resolver(Arc::new(SsrfGuardResolver));
+        if guard_ssrf {
+            // Reject IP-literal redirect targets at the URL level too; the
+            // resolver hook never sees them. Wrap the normal limit policy so
+            // redirect-loop protection is preserved.
+            let follow = reqwest::redirect::Policy::limited(max_redirects);
+            builder = builder
+                .dns_resolver(Arc::new(SsrfGuardResolver))
+                .redirect(reqwest::redirect::Policy::custom(move |attempt| {
+                    if crate::security::ip_literal_is_blocked(attempt.url()) {
+                        attempt.error("redirect target is a blocked IP literal")
+                    } else {
+                        follow.redirect(attempt)
+                    }
+                }));
+        } else {
+            builder = builder.redirect(reqwest::redirect::Policy::limited(max_redirects));
         }
         if !config.default_headers.is_empty() {
             builder = builder.default_headers(build_header_map(&config.default_headers)?);
@@ -56,6 +74,7 @@ impl HttpFetcher {
             client,
             max_response_bytes: config.max_response_bytes,
             max_retries: config.max_retries,
+            guard_ssrf,
         })
     }
 
@@ -89,6 +108,12 @@ impl HttpFetcher {
     }
 
     async fn fetch_once(&self, url: &Url) -> Result<FetchResponse, FetchError> {
+        if self.guard_ssrf && crate::security::ip_literal_is_blocked(url) {
+            return Err(FetchError::PolicyBlocked(format!(
+                "target host '{}' is a blocked IP literal",
+                url.host_str().unwrap_or("<unknown>")
+            )));
+        }
         let resp = self.client.get(url.clone()).send().await?;
         let status = resp.status().as_u16();
         let final_url = resp.url().clone();
