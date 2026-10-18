@@ -55,7 +55,7 @@ __all__ = [
     "CrawlFailedError",
 ]
 
-__version__ = "0.2.2"
+__version__ = "0.2.3"
 
 
 def bundled_chrome_path() -> Optional[str]:
