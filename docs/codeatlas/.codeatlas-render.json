@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "outputs": {
+    "md": [
+      "apps.1.md",
+      "browser.2.1.md",
+      "core.2.2.md",
+      "crates.2.md",
+      "docs.3.md",
+      "engine.2.3.md",
+      "fetch.2.4.md",
+      "frontier.2.5.md",
+      "mudfish.1.1.md",
+      "overview.md",
+      "parser.2.6.md",
+      "python.2.7.md",
+      "tools.4.md"
+    ],
+    "html": [
+      "apps.1.html",
+      "browser.2.1.html",
+      "core.2.2.html",
+      "crates.2.html",
+      "docs.3.html",
+      "engine.2.3.html",
+      "fetch.2.4.html",
+      "frontier.2.5.html",
+      "mudfish.1.1.html",
+      "overview.html",
+      "parser.2.6.html",
+      "python.2.7.html",
+      "tools.4.html"
+    ]
+  }
+}
