@@ -16,4 +16,4 @@ crates/python/python/mudfish/*.pyd
 # Bundled chrome-headless-shell (fetched at bundle-build time, never committed)
 crates/python/python/mudfish/_chrome/
 
-graphify-out/
+codeatlas-out/
