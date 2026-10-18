@@ -209,3 +209,34 @@ async fn politeness_manager_spaces_out_requests() {
     let elapsed = start.elapsed();
     assert!(elapsed >= Duration::from_millis(90));
 }
+
+#[tokio::test]
+async fn persists_set_cookie_across_requests() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/login"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("set-cookie", "session=abc123; Path=/")
+                .set_body_string("logged in"),
+        )
+        .mount(&server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/account"))
+        .and(header("cookie", "session=abc123"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("account"))
+        .mount(&server)
+        .await;
+
+    let fetcher = HttpFetcher::new(&test_config()).unwrap();
+    let login = Url::parse(&format!("{}/login", server.uri())).unwrap();
+    let account = Url::parse(&format!("{}/account", server.uri())).unwrap();
+
+    assert_eq!(fetcher.fetch(&login).await.unwrap().status, 200);
+    let response = fetcher.fetch(&account).await.unwrap();
+    assert_eq!(response.status, 200);
+    assert_eq!(response.body.as_ref(), b"account");
+}

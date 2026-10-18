@@ -21,7 +21,7 @@ Rust-native asynchronous web crawler with Python bindings: deterministic HTTP cr
 
 ## Verified gaps and user-facing risks
 
-- No auth/session/cookie handling, no structured extraction, no distributed crawling.
+- Session support is now partial: default headers plus a per-crawler cookie jar; no login-form automation/CSRF, no structured extraction, no distributed crawling.
 - Browser render path is unbenchmarked and, per the README, does not go through MudFish's SSRF guard upstream.
 - 1.3x vs Scrapy is a weak differentiator; `main` CI failed on 2026-10-18.
 - No MCP/agent tooling.

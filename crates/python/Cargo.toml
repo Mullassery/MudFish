@@ -2,7 +2,7 @@
 name = "mudfish-python"
 # Versioned independently of the Rust workspace: the Python package ships a
 # richer API surface than the crates, so it bumps on its own cadence.
-version = "0.2.3"
+version = "0.2.4"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true

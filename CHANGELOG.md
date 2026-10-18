@@ -9,6 +9,12 @@ breaking at any point.
 
 ## [Unreleased]
 
+### Added
+- HTTP fetcher now enables a per-crawler cookie store, so `Set-Cookie` values
+  from a login/session response are sent on subsequent requests. Manual
+  `Cookie`/`Authorization` headers still work via `default_headers`; no login
+  form/CSRF automation is added. Python package `0.2.4`, Rust workspace `0.1.4`.
+
 ### Changed
 - Rust workspace `0.1.2` → `0.1.3`, tagged `rust-v0.1.3`, so downstream
   repositories can pin crate dependencies to a release tag instead of a raw

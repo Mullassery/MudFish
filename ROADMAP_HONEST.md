@@ -26,7 +26,7 @@ The original project brief describes a 9-phase, ~20-crate platform (browser rend
 
 - HTTP/3 is compiled in via `reqwest` feature flags but never exercised against a real HTTP/3 endpoint.
 - No load testing: memory/CPU behavior on crawls of thousands of pages is unmeasured. The fetch layer streams response bodies (no full-buffering beyond the size cap), but nothing downstream (frontier, page storage) has been profiled at scale.
-- Cookie/session-based authentication flows have not been tested; the fetcher has no explicit cookie-jar wiring beyond what `reqwest` does by default (which is: none, unless enabled).
+- Cookie/session-based authentication flows have not been tested end-to-end. The HTTP fetcher now enables a per-instance cookie store, so `Set-Cookie` values persist across requests; `default_headers` still carries manual `Cookie`/`Authorization` values. Login-form automation/CSRF are not implemented.
 - `NormalizationOptions::sort_query_params` and the `TrailingSlashPolicy::Add`/`Remove` variants are implemented and unit-tested in isolation but not exercised by the CLI (no flag exposes them yet — the CLI always uses `NormalizationOptions::default()`).
 
 ## Not built

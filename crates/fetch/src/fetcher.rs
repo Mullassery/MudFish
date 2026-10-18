@@ -101,21 +101,24 @@ fn build_client(config: &CrawlConfig, proxy: Option<&str>) -> Result<reqwest::Cl
     let max_redirects = config.max_redirects as usize;
     let mut builder = reqwest::Client::builder()
         .user_agent(config.user_agent.clone())
-        .timeout(config.request_timeout);
+        .timeout(config.request_timeout)
+        // Persist Set-Cookie values across requests in one crawler instance,
+        // so a login/session page can set a cookie that later pages send back.
+        .cookie_store(true);
     if guard_ssrf {
         // Reject IP-literal redirect targets at the URL level too; the
         // resolver hook never sees them. Wrap the normal limit policy so
         // redirect-loop protection is preserved.
         let follow = reqwest::redirect::Policy::limited(max_redirects);
-        builder = builder
-            .dns_resolver(Arc::new(SsrfGuardResolver))
-            .redirect(reqwest::redirect::Policy::custom(move |attempt| {
+        builder = builder.dns_resolver(Arc::new(SsrfGuardResolver)).redirect(
+            reqwest::redirect::Policy::custom(move |attempt| {
                 if crate::security::ip_literal_is_blocked(attempt.url()) {
                     attempt.error("redirect target is a blocked IP literal")
                 } else {
                     follow.redirect(attempt)
                 }
-            }));
+            }),
+        );
     } else {
         builder = builder.redirect(reqwest::redirect::Policy::limited(max_redirects));
     }
