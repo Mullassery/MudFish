@@ -47,6 +47,20 @@ pub struct CrawlConfig {
     /// How long a rendered page is allowed to settle (network idle wait)
     /// before its DOM is captured, when `render_js` is enabled.
     pub render_settle: Duration,
+    /// Ordered list of proxy URLs (e.g. `http://user:pass@host:port`). Empty
+    /// by default, meaning every request goes direct. When non-empty, the
+    /// fetcher builds one HTTP client per proxy and rotates through them so a
+    /// long crawl isn't pinned to a single egress IP.
+    pub proxies: Vec<String>,
+    /// Number of requests sent through a proxy before rotating to the next
+    /// one. Ignored when `proxies` is empty. A retryable failure also forces
+    /// an immediate rotation.
+    pub proxy_rotate_after: u32,
+    /// Explicit path to the Chrome/Chromium (or `chrome-headless-shell`)
+    /// binary to drive when `render_js` is set. `None` (the default) uses
+    /// chromiumoxide's host autodetection (including `$CHROME`). Bundled
+    /// distributions point this at the binary shipped inside the package.
+    pub chrome_path: Option<String>,
 }
 
 impl Default for CrawlConfig {
@@ -78,6 +92,9 @@ impl Default for CrawlConfig {
             allow_private_networks: false,
             render_js: false,
             render_settle: Duration::from_secs(2),
+            proxies: Vec::new(),
+            proxy_rotate_after: 50,
+            chrome_path: None,
         }
     }
 }

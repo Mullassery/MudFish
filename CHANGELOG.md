@@ -9,7 +9,32 @@ breaking at any point.
 
 ## [Unreleased]
 
+### Security
+- Bumped `rustls` 0.23.45 → 0.23.46 (RUSTSEC-2026-0346/0347/0348/0349).
+
 ### Added
+- `CrawlConfig::proxies` / `proxy_rotate_after`: an ordered proxy pool the
+  fetcher rotates through (one `reqwest::Client` per proxy, round-robin every
+  N requests, with immediate rotation on a retryable failure). The SSRF
+  resolver hook and redirect policy are applied to every client, so proxy
+  rotation can't be used to bypass the guard. Exposed on the CLI as
+  repeatable `--proxy` plus `--proxy-rotate-after`, and in the Python
+  `CrawlOptions` as `proxies`/`proxy_rotate_after`. (RECHECK-022)
+- Network-idle settle for `BrowserRenderer::render`: the post-navigation wait
+  now returns as soon as no request/response has been observed for a short
+  quiet window, instead of always blocking for the full fixed `settle`
+  duration, while still using `settle` as the ceiling for pages that never go
+  idle. (RECHECK-021)
+- `HttpFetcher::current_proxy_index` (observability/tests).
+- **Bundled Chrome.** `tools/fetch_chrome_headless_shell.py` downloads a
+  pinned `chrome-headless-shell` (Chrome for Testing) into
+  `crates/python/python/mudfish/_chrome/` (gitignored); the Python wheel then
+  ships a working `render_js` binary with no host install. `CrawlConfig::chrome_path`
+  (CLI `--chrome-path`, Python `CrawlOptions.chrome_path`) selects the binary,
+  `mudfish.bundled_chrome_path()` / `MUDFISH_CHROME` expose it, and
+  `BrowserRenderer::launch` restores the executable bit if the wheel dropped
+  it. The bundled wheel is distributed via GitHub Releases (it exceeds PyPI's
+  per-file size cap); the PyPI wheel stays small and uses host Chrome.
 - `CrawlConfig::default_headers`: extra headers (e.g. `Cookie`/`Authorization`)
   sent with every request, for crawling pages that require auth.
   `HttpFetcher::new` now validates and attaches them via

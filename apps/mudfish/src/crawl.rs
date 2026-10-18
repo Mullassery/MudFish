@@ -20,6 +20,12 @@ fn build_config(args: &CrawlArgs) -> anyhow::Result<CrawlConfig> {
         allow_private_networks: args.allow_private_networks,
         render_js: args.render_js,
         render_settle: Duration::from_millis(args.render_settle_ms),
+        proxies: args.proxy.clone(),
+        proxy_rotate_after: args.proxy_rotate_after,
+        chrome_path: args
+            .chrome_path
+            .as_ref()
+            .map(|p| p.to_string_lossy().into_owned()),
         max_urls: Some(args.max_urls),
         max_duration: args.max_duration_secs.map(Duration::from_secs),
         ..CrawlConfig::default()

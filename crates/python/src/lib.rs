@@ -28,6 +28,9 @@ use url::Url;
     allow_private_networks = false,
     render_js = false,
     render_settle_ms = 2000,
+    proxies = None,
+    proxy_rotate_after = 50,
+    chrome_path = None,
 ))]
 #[allow(clippy::too_many_arguments)]
 fn crawl<'py>(
@@ -46,6 +49,9 @@ fn crawl<'py>(
     allow_private_networks: bool,
     render_js: bool,
     render_settle_ms: u64,
+    proxies: Option<Vec<String>>,
+    proxy_rotate_after: u32,
+    chrome_path: Option<String>,
 ) -> PyResult<Bound<'py, PyAny>> {
     let seed = Url::parse(&url).map_err(|e| PyValueError::new_err(format!("invalid url: {e}")))?;
 
@@ -62,6 +68,9 @@ fn crawl<'py>(
         allow_private_networks,
         render_js,
         render_settle: Duration::from_millis(render_settle_ms),
+        proxies: proxies.unwrap_or_default(),
+        proxy_rotate_after,
+        chrome_path,
         max_urls: Some(max_urls),
         max_duration: max_duration_secs.map(Duration::from_secs),
         ..CrawlConfig::default()

@@ -47,7 +47,7 @@ async fn renders_js_injected_content_and_captures_the_fetch_it_fires() {
         .mount(&server)
         .await;
 
-    let renderer = BrowserRenderer::launch()
+    let renderer = BrowserRenderer::launch(None)
         .await
         .expect("a Chrome/Chromium binary must be discoverable on this host");
 

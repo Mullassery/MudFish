@@ -27,8 +27,12 @@ Quick start::
 from __future__ import annotations
 
 import asyncio
+import os
+import stat
+import sys
 from dataclasses import asdict, dataclass, fields
 from enum import Enum
+from pathlib import Path
 from typing import Any, Iterator, Mapping, Optional
 
 from ._mudfish import crawl as _crawl
@@ -51,7 +55,30 @@ __all__ = [
     "CrawlFailedError",
 ]
 
-__version__ = "0.2.1"
+__version__ = "0.2.2"
+
+
+def bundled_chrome_path() -> Optional[str]:
+    """Path to the Chrome/`chrome-headless-shell` binary bundled inside this
+    package, or ``None`` if this distribution doesn't bundle one.
+
+    Bundled wheels ship a platform-specific ``chrome-headless-shell`` under
+    ``mudfish/_chrome/`` so ``render_js=True`` works with no host install.
+    Set ``MUDFISH_CHROME`` to override.
+    """
+    override = os.environ.get("MUDFISH_CHROME")
+    if override:
+        return override
+    candidate = Path(__file__).resolve().parent / "_chrome" / "chrome-headless-shell"
+    if sys.platform == "win32":
+        candidate = candidate.with_suffix(".exe")
+    if not candidate.is_file():
+        return None
+    try:
+        candidate.chmod(candidate.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    except OSError:
+        pass
+    return str(candidate)
 
 
 class MudfishError(Exception):
@@ -286,6 +313,19 @@ class CrawlOptions:
     """When ``render_js`` is set, how long to let a page settle before
     capturing the rendered DOM."""
 
+    proxies: tuple[str, ...] = ()
+    """Proxy URLs to route requests through. Empty (default) goes direct.
+    Supply more than one to rotate across a pool."""
+
+    proxy_rotate_after: int = 50
+    """Requests through a proxy before rotating to the next one in
+    ``proxies``."""
+
+    chrome_path: Optional[str] = None
+    """Explicit Chrome/`chrome-headless-shell` binary for ``render_js``.
+    ``None`` (default) uses the binary bundled in this package when present,
+    else the host's autodetected Chrome."""
+
     def as_kwargs(self) -> dict[str, Any]:
         """The options as a keyword dict for the Rust binding."""
         return asdict(self)
@@ -298,6 +338,8 @@ class CrawlOptions:
 
 def _run_raw(url: str, options: Mapping[str, Any]) -> dict[str, Any]:
     resolved = CrawlOptions.from_kwargs(options).as_kwargs()
+    if resolved.get("render_js") and not resolved.get("chrome_path"):
+        resolved["chrome_path"] = bundled_chrome_path()
     try:
         return _crawl(url, **resolved)
     except InvalidURLError:

@@ -95,11 +95,25 @@ All keyword-only, matching the CLI's flags (also available as the `CrawlOptions`
 | `allow_private_networks` | `False` | Permit loopback/private targets (internal use only) |
 | `render_js` | `False` | Re-render JS-dependent pages in headless Chrome (needs Chrome on the host; much slower) |
 | `render_settle_ms` | `2000` | When `render_js` is on, settle time before capturing a rendered page |
+| `proxies` | `()` | Proxy URLs to route requests through; supply several to rotate a pool |
+| `proxy_rotate_after` | `50` | Requests through a proxy before rotating to the next |
+| `chrome_path` | `None` | Explicit Chrome/`chrome-headless-shell` binary for `render_js`; defaults to the bundled binary, then host autodetection |
 
 ## Limitations
 
-- **Chrome is not bundled.** With `render_js=True` the engine drives a headless Chrome that must already be installed on the host; if it cannot be launched, the crawl logs a warning and falls back to static HTML.
+- **Chrome is not bundled in the PyPI wheel.** With `render_js=True` the engine drives a headless Chrome that must already be installed on the host; if it cannot be launched, the crawl logs a warning and falls back to static HTML. A separate **bundled** wheel that ships a `chrome-headless-shell` (so `render_js` works with no host install) is attached to the GitHub release for each version — look for the asset named `mudfish-<version>+chrome-*.whl`.
 - **Single-platform wheels initially.** Built and published from the maintainer's machine, not a cross-platform CI matrix yet — check PyPI for which platforms have wheels; others will need a Rust toolchain to build from source.
+
+## Bundled-Chrome builds
+
+To build the bundled wheel locally:
+
+```bash
+python3 tools/fetch_chrome_headless_shell.py   # pins + downloads chrome-headless-shell
+cd crates/python && maturin build --release
+```
+
+The binary is fetched (never committed) into `python/mudfish/_chrome/`, the wheel picks it up automatically, and at runtime `mudfish.bundled_chrome_path()` returns it (overridable with `MUDFISH_CHROME`).
 
 ## License
 

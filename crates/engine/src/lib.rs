@@ -137,7 +137,8 @@ pub async fn crawl(config: &CrawlConfig) -> anyhow::Result<CrawlResult> {
     // (no Chrome binary on the host) is non-fatal -- we log and fall back to
     // static HTML for the whole crawl rather than aborting it.
     let renderer = if config.render_js {
-        match BrowserRenderer::launch().await {
+        let chrome_path = config.chrome_path.as_deref().map(std::path::Path::new);
+        match BrowserRenderer::launch(chrome_path).await {
             Ok(r) => Some(Arc::new(r)),
             Err(e) => {
                 warn!(error = %e, "render_js requested but headless Chrome could not be launched; falling back to static HTML");

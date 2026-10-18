@@ -21,6 +21,9 @@ fn args_for(url: String) -> CrawlArgs {
         allow_private_networks: true,
         render_js: false,
         render_settle_ms: 2000,
+        proxy: Vec::new(),
+        proxy_rotate_after: 50,
+        chrome_path: None,
         output: OutputFormat::Json,
         out_file: None,
     }

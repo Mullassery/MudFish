@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -28,11 +29,61 @@ impl FetchResponse {
     }
 }
 
+/// Rotates a set of pre-built clients (one per configured proxy) so a long
+/// crawl isn't pinned to a single egress IP. Pure selection logic, no I/O,
+/// so it's unit-testable without a live proxy.
+struct ProxyPool {
+    clients: Vec<reqwest::Client>,
+    rotate_after: u32,
+    current: AtomicUsize,
+    used: AtomicU32,
+}
+
+impl ProxyPool {
+    fn new(clients: Vec<reqwest::Client>, rotate_after: u32) -> Self {
+        Self {
+            clients,
+            rotate_after: rotate_after.max(1),
+            current: AtomicUsize::new(0),
+            used: AtomicU32::new(0),
+        }
+    }
+
+    /// Returns the client for the current proxy, advancing to the next proxy
+    /// after `rotate_after` requests have gone through the current one.
+    fn select(&self) -> &reqwest::Client {
+        let idx = self.current.load(Ordering::Relaxed) % self.clients.len();
+        let used = self.used.fetch_add(1, Ordering::Relaxed) + 1;
+        if used >= self.rotate_after {
+            self.used.store(0, Ordering::Relaxed);
+            self.current.fetch_add(1, Ordering::Relaxed);
+        }
+        &self.clients[idx]
+    }
+
+    /// Rotates away from the current proxy immediately (called after a
+    /// retryable failure so a dead/ratelimited proxy is abandoned rather
+    /// than retried `rotate_after` more times).
+    fn mark_failure(&self) {
+        self.used.store(0, Ordering::Relaxed);
+        self.current.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn index(&self) -> usize {
+        self.current.load(Ordering::Relaxed) % self.clients.len()
+    }
+}
+
+enum ClientSet {
+    Single(reqwest::Client),
+    Pool(ProxyPool),
+}
+
 /// The rest of the platform talks to `HttpFetcher` (and, eventually, a
 /// browser-backed fetcher) only through this shape — nothing downstream
 /// should need to know which one produced a given response.
 pub struct HttpFetcher {
-    client: reqwest::Client,
+    clients: ClientSet,
     max_response_bytes: u64,
     max_retries: u32,
     /// Whether the SSRF guard is active. The DNS resolver hook covers
@@ -42,45 +93,76 @@ pub struct HttpFetcher {
     guard_ssrf: bool,
 }
 
+/// Builds one `reqwest::Client`, optionally pinned to a proxy. The SSRF
+/// resolver hook and redirect policy are applied identically to every client
+/// (direct and proxied) so proxy rotation can't be used to bypass the guard.
+fn build_client(config: &CrawlConfig, proxy: Option<&str>) -> Result<reqwest::Client, FetchError> {
+    let guard_ssrf = !config.allow_private_networks;
+    let max_redirects = config.max_redirects as usize;
+    let mut builder = reqwest::Client::builder()
+        .user_agent(config.user_agent.clone())
+        .timeout(config.request_timeout);
+    if guard_ssrf {
+        // Reject IP-literal redirect targets at the URL level too; the
+        // resolver hook never sees them. Wrap the normal limit policy so
+        // redirect-loop protection is preserved.
+        let follow = reqwest::redirect::Policy::limited(max_redirects);
+        builder = builder
+            .dns_resolver(Arc::new(SsrfGuardResolver))
+            .redirect(reqwest::redirect::Policy::custom(move |attempt| {
+                if crate::security::ip_literal_is_blocked(attempt.url()) {
+                    attempt.error("redirect target is a blocked IP literal")
+                } else {
+                    follow.redirect(attempt)
+                }
+            }));
+    } else {
+        builder = builder.redirect(reqwest::redirect::Policy::limited(max_redirects));
+    }
+    if !config.default_headers.is_empty() {
+        builder = builder.default_headers(build_header_map(&config.default_headers)?);
+    }
+    if let Some(raw) = proxy {
+        let proxy = reqwest::Proxy::all(raw)
+            .map_err(|e| FetchError::PolicyBlocked(format!("invalid proxy '{raw}': {e}")))?;
+        builder = builder.proxy(proxy);
+    }
+    Ok(builder.build()?)
+}
+
 impl HttpFetcher {
     pub fn new(config: &CrawlConfig) -> Result<Self, FetchError> {
         let guard_ssrf = !config.allow_private_networks;
-        let max_redirects = config.max_redirects as usize;
-        let mut builder = reqwest::Client::builder()
-            .user_agent(config.user_agent.clone())
-            .timeout(config.request_timeout);
-        if guard_ssrf {
-            // Reject IP-literal redirect targets at the URL level too; the
-            // resolver hook never sees them. Wrap the normal limit policy so
-            // redirect-loop protection is preserved.
-            let follow = reqwest::redirect::Policy::limited(max_redirects);
-            builder = builder
-                .dns_resolver(Arc::new(SsrfGuardResolver))
-                .redirect(reqwest::redirect::Policy::custom(move |attempt| {
-                    if crate::security::ip_literal_is_blocked(attempt.url()) {
-                        attempt.error("redirect target is a blocked IP literal")
-                    } else {
-                        follow.redirect(attempt)
-                    }
-                }));
+        let clients = if config.proxies.is_empty() {
+            ClientSet::Single(build_client(config, None)?)
         } else {
-            builder = builder.redirect(reqwest::redirect::Policy::limited(max_redirects));
-        }
-        if !config.default_headers.is_empty() {
-            builder = builder.default_headers(build_header_map(&config.default_headers)?);
-        }
-        let client = builder.build()?;
+            let mut clients = Vec::with_capacity(config.proxies.len());
+            for proxy in &config.proxies {
+                clients.push(build_client(config, Some(proxy))?);
+            }
+            ClientSet::Pool(ProxyPool::new(clients, config.proxy_rotate_after))
+        };
         Ok(Self {
-            client,
+            clients,
             max_response_bytes: config.max_response_bytes,
             max_retries: config.max_retries,
             guard_ssrf,
         })
     }
 
+    /// Index of the proxy currently in use (0 and always 0 when no proxies
+    /// are configured). Exposed for observability/tests.
+    pub fn current_proxy_index(&self) -> usize {
+        match &self.clients {
+            ClientSet::Single(_) => 0,
+            ClientSet::Pool(pool) => pool.index(),
+        }
+    }
+
     /// Fetches `url`, retrying transient failures (connect/timeout errors,
     /// HTTP 429, HTTP 5xx) with exponential backoff and jitter. Honors a
-    /// `Retry-After` header when present instead of guessing.
+    /// `Retry-After` header when present instead of guessing. When proxies
+    /// are configured, a retryable failure also rotates to the next proxy.
     pub async fn fetch(&self, url: &Url) -> Result<FetchResponse, FetchError> {
         let mut attempt: u32 = 0;
         loop {
@@ -93,6 +175,10 @@ impl HttpFetcher {
 
             if !should_retry {
                 return result;
+            }
+
+            if let ClientSet::Pool(pool) = &self.clients {
+                pool.mark_failure();
             }
 
             let delay = match &result {
@@ -114,7 +200,11 @@ impl HttpFetcher {
                 url.host_str().unwrap_or("<unknown>")
             )));
         }
-        let resp = self.client.get(url.clone()).send().await?;
+        let client = match &self.clients {
+            ClientSet::Single(client) => client,
+            ClientSet::Pool(pool) => pool.select(),
+        };
+        let resp = client.get(url.clone()).send().await?;
         let status = resp.status().as_u16();
         let final_url = resp.url().clone();
         let headers: Vec<(String, String)> = resp
@@ -244,5 +334,70 @@ mod tests {
         let err =
             build_header_map(&[("X-Test".to_string(), "bad\nvalue".to_string())]).unwrap_err();
         assert!(matches!(err, FetchError::InvalidHeader(_)));
+    }
+
+    fn dummy_clients(n: usize) -> Vec<reqwest::Client> {
+        (0..n).map(|_| reqwest::Client::new()).collect()
+    }
+
+    #[test]
+    fn proxy_pool_rotates_after_configured_requests() {
+        let pool = ProxyPool::new(dummy_clients(3), 2);
+        assert_eq!(pool.index(), 0);
+        pool.select();
+        assert_eq!(pool.index(), 0, "still on proxy 0 for the 1st request");
+        pool.select();
+        assert_eq!(pool.index(), 1, "rotated to proxy 1 after 2 requests");
+        pool.select();
+        pool.select();
+        assert_eq!(pool.index(), 2);
+        pool.select();
+        pool.select();
+        assert_eq!(pool.index(), 0, "wraps back around");
+    }
+
+    #[test]
+    fn proxy_pool_mark_failure_rotates_immediately() {
+        let pool = ProxyPool::new(dummy_clients(2), 100);
+        assert_eq!(pool.index(), 0);
+        pool.select();
+        assert_eq!(pool.index(), 0);
+        pool.mark_failure();
+        assert_eq!(pool.index(), 1, "failure abandons the current proxy");
+    }
+
+    #[test]
+    fn direct_fetcher_reports_proxy_index_zero() {
+        let config = CrawlConfig::default();
+        let fetcher = HttpFetcher::new(&config).unwrap();
+        assert_eq!(fetcher.current_proxy_index(), 0);
+    }
+
+    #[test]
+    fn fetcher_builds_a_pool_from_configured_proxies() {
+        let config = CrawlConfig {
+            proxies: vec![
+                "http://127.0.0.1:8080".to_string(),
+                "http://127.0.0.1:8081".to_string(),
+            ],
+            proxy_rotate_after: 1,
+            ..CrawlConfig::default()
+        };
+        let fetcher = HttpFetcher::new(&config).unwrap();
+        assert_eq!(fetcher.current_proxy_index(), 0);
+        assert!(matches!(fetcher.clients, ClientSet::Pool(_)));
+    }
+
+    #[test]
+    fn fetcher_rejects_invalid_proxy_url() {
+        let config = CrawlConfig {
+            proxies: vec!["not a proxy url".to_string()],
+            ..CrawlConfig::default()
+        };
+        let err = match HttpFetcher::new(&config) {
+            Ok(_) => panic!("expected invalid proxy to be rejected"),
+            Err(e) => e,
+        };
+        assert!(matches!(err, FetchError::PolicyBlocked(_)));
     }
 }

@@ -91,6 +91,23 @@ pub struct CrawlArgs {
     #[arg(long, default_value_t = 2000)]
     pub render_settle_ms: u64,
 
+    /// Proxy URL to route requests through (e.g.
+    /// `http://user:pass@host:port`). Repeat to supply a rotation pool; the
+    /// fetcher round-robins across them and rotates away from a proxy that
+    /// starts failing. Omit for a direct connection.
+    #[arg(long = "proxy")]
+    pub proxy: Vec<String>,
+
+    /// Number of requests sent through a proxy before rotating to the next
+    /// one (ignored when no `--proxy` is supplied).
+    #[arg(long, default_value_t = 50)]
+    pub proxy_rotate_after: u32,
+
+    /// Explicit Chrome/Chromium (or `chrome-headless-shell`) binary to drive
+    /// when `--render-js` is set. Defaults to host autodetection.
+    #[arg(long)]
+    pub chrome_path: Option<std::path::PathBuf>,
+
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Summary)]
     pub output: OutputFormat,
