@@ -9,6 +9,14 @@ breaking at any point.
 
 ## [Unreleased]
 
+### Changed
+- Rust workspace `0.1.2` → `0.1.3`, tagged `rust-v0.1.3`, so downstream
+  repositories can pin crate dependencies to a release tag instead of a raw
+  commit SHA. `BrowserRenderer::launch` now takes `chrome_path: Option<&Path>`
+  (breaking for Rust callers on ≤0.1.2). Aligned `crates/python/Cargo.toml`
+  version (was lagging at `0.2.1`) with `pyproject.toml`/`__version__`
+  (`0.2.3`), and documented the two consumption paths in the README.
+
 ### Security
 - Bumped `rustls` 0.23.45 → 0.23.46 (RUSTSEC-2026-0346/0347/0348/0349).
 

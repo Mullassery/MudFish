@@ -38,7 +38,7 @@ Mudfish is a fast, safety-conscious asynchronous web crawler built in Rust and e
 
 ## Project status
 
-`mudfish` 0.2.1 on PyPI, workspace `v0.1.1`. Phase 1 (HTTP crawler + opt-in browser rendering) is built and verified by 42 Rust tests plus 4 Python-binding tests, and manually validated against live sites (example.com, rust-lang.org). In a head-to-head benchmark against Scrapy 2.13.4 on the same live site it was ~1.3x faster at equal scope. See [ROADMAP_HONEST.md](ROADMAP_HONEST.md) for the full honest breakdown of built/verified/broken.
+`mudfish` 0.2.3 on PyPI, Rust workspace `0.1.3` (git tag `rust-v0.1.3` for downstream consumers). Phase 1 (HTTP crawler + opt-in browser rendering) is built and verified by 42 Rust tests plus 4 Python-binding tests, and manually validated against live sites (example.com, rust-lang.org). In a head-to-head benchmark against Scrapy 2.13.4 on the same live site it was ~1.3x faster at equal scope. See [ROADMAP_HONEST.md](ROADMAP_HONEST.md) for the full honest breakdown of built/verified/broken.
 
 ## Installation
 
@@ -104,6 +104,43 @@ Options:
 ### Python
 
 `mudfish.crawl()` takes the same options as keyword arguments (`depth`, `concurrency`, `per_host_concurrency`, `same_domain`, `max_urls`, `max_duration_secs`, `timeout_secs`, `request_delay_ms`, `max_response_bytes`, `respect_robots`, `allow_private_networks`, `render_js`, `render_settle_ms`). It blocks until the crawl finishes (or a budget is hit) and returns a typed `CrawlResult`; the GIL is released while it runs. `mudfish.crawl_async()` (plus the reusable `mudfish.Crawler`) is the `asyncio`-friendly surface over the same engine. Full object reference and limitations: `crates/python/README.md`.
+
+## Using MudFish from another repository
+
+MudFish is consumed two ways. Both are supported and exercised by a real
+downstream user (`PyTagManager`).
+
+**Python** — depend on the wheel and call the same engine the CLI uses:
+
+```bash
+pip install mudfish
+```
+
+```python
+import mudfish
+result = mudfish.crawl("https://example.com", depth=1, max_urls=50)
+```
+
+**Rust** — depend on the workspace crates by tag (not by raw commit SHA), so
+upgrades are deliberate and revertible. The crates are not on crates.io; pin
+the tag that matches the workspace version:
+
+```toml
+mudfish-core     = { git = "https://github.com/Mullassery/MudFish", tag = "rust-v0.1.3" }
+mudfish-frontier = { git = "https://github.com/Mullassery/MudFish", tag = "rust-v0.1.3" }
+mudfish-fetch    = { git = "https://github.com/Mullassery/MudFish", tag = "rust-v0.1.3" }
+mudfish-parser   = { git = "https://github.com/Mullassery/MudFish", tag = "rust-v0.1.3" }
+mudfish-engine   = { git = "https://github.com/Mullassery/MudFish", tag = "rust-v0.1.3" }
+mudfish-browser  = { git = "https://github.com/Mullassery/MudFish", tag = "rust-v0.1.3" }
+```
+
+Tag naming: `vX.Y.Z` tags track the **Python** package; `rust-vX.Y.Z` tags
+track the **Rust workspace** (they version independently). Pin `rust-v*` for
+crate dependencies.
+
+Note on upgrades: `rust-v0.1.3` changed `BrowserRenderer::launch` to take a
+`chrome_path: Option<&Path>` argument (bundled-Chrome support). Callers moving
+from ≤0.1.2 must pass `launch(None)` to keep using host Chrome.
 
 ## Documentation
 
