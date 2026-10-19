@@ -14,8 +14,8 @@ Mudfish is a fast, safety-conscious asynchronous web crawler built in Rust and e
 
 - **Bounded, budget-safe crawling** — hard caps on URLs fetched, wall-clock duration, and per-response bytes, enforced atomically under concurrency.
 - **SSRF protection where it counts** — a custom DNS resolver filters resolved addresses (loopback/private/link-local/metadata) *after* resolution, defeating DNS-rebinding that a hostname blocklist can't catch.
-- **Polite by default** — robots.txt honored with Google-documented 2xx/4xx/5xx handling and cached TTL, per-host request spacing, and per-host concurrency caps.
-- **Modern HTTP** — gzip/brotli/deflate/zstd, HTTP/2, redirects, retries with exponential backoff + jitter, `Retry-After` support, and body caps enforced by streaming.
+- **Polite by default** — robots.txt honored with Google-documented 2xx/4xx/5xx handling and cached TTL, a per-host token bucket (2 req/s sustained, burst 2 by default), minimum request spacing, and a per-host concurrency cap.
+- **Modern HTTP** — gzip/brotli/deflate/zstd, HTTP/2, redirects, retries with jittered exponential backoff, `Retry-After` support (delta-seconds or HTTP-date), and body caps enforced by streaming.
 - **Correct URL handling** — fragment/default-port stripping, tracking-parameter removal (`utm_*`, `gclid`, …), duplicate-slash collapsing, and same-domain scoping that follows the seed's *resolved* host through redirects.
 - **Pluggable frontier priority** — depth-based BFS-like scheduling by default (not FIFO), URL-dedup via normalized fingerprinting, and a correctness-tested termination protocol (drain, hard stop, and race-free shutdown).
 - **Optional browser rendering** — `--render-js` re-renders JS-dependent pages in a real headless Chrome and parses the post-JS DOM (off by default; needs Chrome on the host).
@@ -39,7 +39,7 @@ Mudfish is a fast, safety-conscious asynchronous web crawler built in Rust and e
 
 ## Project status
 
-`mudfish` 0.2.3 on PyPI, Rust workspace `0.1.3` (git tag `rust-v0.1.3` for downstream consumers). Phase 1 (HTTP crawler + opt-in browser rendering) is built and verified by 42 Rust tests plus 4 Python-binding tests, and manually validated against live sites (example.com, rust-lang.org). In a head-to-head benchmark against Scrapy 2.13.4 on the same live site it was ~1.3x faster at equal scope. See [ROADMAP_HONEST.md](ROADMAP_HONEST.md) for the full honest breakdown of built/verified/broken.
+`mudfish` 0.2.3 on PyPI, Rust workspace `0.1.3` (git tag `rust-v0.1.3` for downstream consumers). Phase 1 (HTTP crawler + opt-in browser rendering) is built and verified by 100+ Rust tests plus 4 Python-binding tests, and manually validated against live sites (example.com, rust-lang.org). In a head-to-head benchmark against Scrapy 2.13.4 on the same live site it was ~1.3x faster at equal scope. See [ROADMAP_HONEST.md](ROADMAP_HONEST.md) for the full honest breakdown of built/verified/broken.
 
 ## Installation
 
@@ -105,6 +105,11 @@ Options:
       --max-duration-secs <SECS>           Hard wall-clock budget for the crawl
       --timeout-secs <SECS>                Per-request timeout [default: 30]
       --request-delay-ms <MS>              Min delay between requests to the same host
+      --per-host-rate <RPS>                Sustained requests/sec per host, 0 disables [default: 2]
+      --per-host-burst <N>                 Per-host token-bucket burst [default: 2]
+      --max-retries <N>                    Retries after 429/5xx/transport errors [default: 2]
+      --retry-base-ms <MS>                 First retry delay; doubles with jitter [default: 500]
+      --retry-max-ms <MS>                  Exponential backoff ceiling [default: 30000]
       --max-response-bytes <BYTES>         Per-response size cap [default: 20MB]
       --no-robots                          Ignore robots.txt (only for infra you own)
       --allow-private-networks             Permit loopback/private targets (internal use only)
@@ -116,7 +121,7 @@ Options:
 
 ### Python
 
-`mudfish.crawl()` takes the same options as keyword arguments (`depth`, `concurrency`, `per_host_concurrency`, `same_domain`, `max_urls`, `max_duration_secs`, `timeout_secs`, `request_delay_ms`, `max_response_bytes`, `respect_robots`, `allow_private_networks`, `render_js`, `render_settle_ms`). It blocks until the crawl finishes (or a budget is hit) and returns a typed `CrawlResult`; the GIL is released while it runs. `mudfish.crawl_async()` (plus the reusable `mudfish.Crawler`) is the `asyncio`-friendly surface over the same engine. Full object reference and limitations: `crates/python/README.md`.
+`mudfish.crawl()` takes the same options as keyword arguments (`depth`, `concurrency`, `per_host_concurrency`, `same_domain`, `max_urls`, `max_duration_secs`, `timeout_secs`, `request_delay_ms`, `per_host_rate`, `per_host_burst`, `max_retries`, `retry_base_ms`, `retry_max_ms`, `max_response_bytes`, `respect_robots`, `allow_private_networks`, `render_js`, `render_settle_ms`). It blocks until the crawl finishes (or a budget is hit) and returns a typed `CrawlResult`; the GIL is released while it runs. `mudfish.crawl_async()` (plus the reusable `mudfish.Crawler`) is the `asyncio`-friendly surface over the same engine. Full object reference and limitations: `crates/python/README.md`.
 
 ## Using MudFish from another repository
 

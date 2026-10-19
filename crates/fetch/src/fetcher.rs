@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use bytes::Bytes;
 use mudfish_core::CrawlConfig;
@@ -86,11 +86,45 @@ pub struct HttpFetcher {
     clients: ClientSet,
     max_response_bytes: u64,
     max_retries: u32,
+    retry: RetryPolicy,
     /// Whether the SSRF guard is active. The DNS resolver hook covers
     /// hostnames, but reqwest never calls it for IP-literal hosts, so the
     /// same policy has to be re-applied at the URL level (see
     /// `security::ip_literal_is_blocked`).
     guard_ssrf: bool,
+}
+
+/// Jittered exponential backoff. Attempt 1 is `base`, attempt 2 is `2 * base`,
+/// and so on up to `max`. Jitter scales each delay by a random factor in
+/// `[0.5, 1.0]`, so a batch of workers that all hit a 429/5xx spread out
+/// instead of retrying in lockstep. Explicit `Retry-After` headers bypass
+/// this entirely (the server's value is honored).
+#[derive(Debug, Clone, Copy)]
+struct RetryPolicy {
+    base: Duration,
+    max: Duration,
+}
+
+impl RetryPolicy {
+    fn new(base: Duration, max: Duration) -> Self {
+        Self {
+            base,
+            max: max.max(base),
+        }
+    }
+
+    fn delay(&self, attempt: u32) -> Duration {
+        self.delay_with_factor(attempt, rand::random_range(0.5..=1.0))
+    }
+
+    fn delay_with_factor(&self, attempt: u32, factor: f64) -> Duration {
+        let shift = attempt.saturating_sub(1).min(16);
+        let base_ms = self.base.as_millis().min(u64::MAX as u128) as u64;
+        let max_ms = self.max.as_millis().min(u64::MAX as u128) as u64;
+        let exp_ms = base_ms.saturating_mul(1u64 << shift).min(max_ms);
+        let factor = factor.clamp(0.0, 1.0);
+        Duration::from_millis((exp_ms as f64 * factor) as u64)
+    }
 }
 
 /// Builds one `reqwest::Client`, optionally pinned to a proxy. The SSRF
@@ -149,6 +183,7 @@ impl HttpFetcher {
             clients,
             max_response_bytes: config.max_response_bytes,
             max_retries: config.max_retries,
+            retry: RetryPolicy::new(config.retry_base_delay, config.retry_max_delay),
             guard_ssrf,
         })
     }
@@ -188,8 +223,8 @@ impl HttpFetcher {
                 Ok(resp) => resp
                     .header("retry-after")
                     .and_then(parse_retry_after)
-                    .unwrap_or_else(|| backoff_delay(attempt + 1)),
-                Err(_) => backoff_delay(attempt + 1),
+                    .unwrap_or_else(|| self.retry.delay(attempt + 1)),
+                Err(_) => self.retry.delay(attempt + 1),
             };
             attempt += 1;
             tokio::time::sleep(delay).await;
@@ -279,17 +314,27 @@ fn is_retryable_status(status: u16) -> bool {
 }
 
 fn is_retryable_error(err: &FetchError) -> bool {
-    matches!(err, FetchError::Request(e) if e.is_timeout() || e.is_connect())
+    matches!(
+        err,
+        FetchError::Request(e)
+            if e.is_timeout() || e.is_connect() || e.is_body() || e.is_request()
+    )
 }
 
+/// Parses both forms RFC 9110 allows for `Retry-After`: delta-seconds
+/// (`Retry-After: 5`) and an HTTP-date (`Retry-After: Wed, 21 Oct 2015
+/// 07:28:00 GMT`). A date in the past means "retry now".
 fn parse_retry_after(value: &str) -> Option<Duration> {
-    value.trim().parse::<u64>().ok().map(Duration::from_secs)
+    parse_retry_after_at(value, SystemTime::now())
 }
 
-fn backoff_delay(attempt: u32) -> Duration {
-    let base_ms: u64 = 500u64.saturating_mul(1u64 << attempt.min(6));
-    let jitter_ms: u64 = rand::random_range(0..250);
-    Duration::from_millis((base_ms + jitter_ms).min(30_000))
+fn parse_retry_after_at(value: &str, now: SystemTime) -> Option<Duration> {
+    let value = value.trim();
+    if let Ok(secs) = value.parse::<u64>() {
+        return Some(Duration::from_secs(secs));
+    }
+    let when = httpdate::parse_http_date(value).ok()?;
+    Some(when.duration_since(now).unwrap_or(Duration::ZERO))
 }
 
 #[cfg(test)]
@@ -308,16 +353,54 @@ mod tests {
     #[test]
     fn retry_after_parses_seconds() {
         assert_eq!(parse_retry_after("5"), Some(Duration::from_secs(5)));
+        assert_eq!(parse_retry_after(" 0 "), Some(Duration::ZERO));
         assert_eq!(parse_retry_after("not-a-number"), None);
     }
 
     #[test]
-    fn backoff_grows_and_caps() {
-        let d1 = backoff_delay(1);
-        let d4 = backoff_delay(4);
-        let d_huge = backoff_delay(20);
-        assert!(d1 < d4);
-        assert!(d_huge <= Duration::from_millis(30_250));
+    fn retry_after_parses_http_date_relative_to_now() {
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_603_238_400);
+        assert_eq!(
+            parse_retry_after_at("Wed, 21 Oct 2020 00:00:10 GMT", now),
+            Some(Duration::from_secs(10))
+        );
+    }
+
+    #[test]
+    fn retry_after_date_in_past_means_retry_now() {
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+        assert_eq!(
+            parse_retry_after_at("Wed, 21 Oct 2020 00:00:10 GMT", now),
+            Some(Duration::ZERO)
+        );
+    }
+
+    #[test]
+    fn backoff_grows_exponentially_and_caps() {
+        let policy = RetryPolicy::new(Duration::from_millis(100), Duration::from_millis(500));
+        // Factor 1.0 removes jitter so the schedule is exact.
+        assert_eq!(policy.delay_with_factor(1, 1.0), Duration::from_millis(100));
+        assert_eq!(policy.delay_with_factor(2, 1.0), Duration::from_millis(200));
+        assert_eq!(policy.delay_with_factor(3, 1.0), Duration::from_millis(400));
+        assert_eq!(policy.delay_with_factor(4, 1.0), Duration::from_millis(500));
+        assert_eq!(
+            policy.delay_with_factor(100, 1.0),
+            Duration::from_millis(500)
+        );
+    }
+
+    #[test]
+    fn backoff_jitter_stays_within_half_to_full_delay() {
+        let policy = RetryPolicy::new(Duration::from_millis(1000), Duration::from_secs(30));
+        for attempt in 1..8 {
+            for _ in 0..100 {
+                let d = policy.delay(attempt);
+                let full = policy.delay_with_factor(attempt, 1.0);
+                let half = policy.delay_with_factor(attempt, 0.5);
+                assert!(d >= half, "jitter below 50%: {d:?} < {half:?}");
+                assert!(d <= full, "jitter above 100%: {d:?} > {full:?}");
+            }
+        }
     }
 
     #[test]

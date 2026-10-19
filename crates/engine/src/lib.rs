@@ -109,9 +109,11 @@ pub async fn crawl(config: &CrawlConfig) -> anyhow::Result<CrawlResult> {
 
     let fetcher = Arc::new(HttpFetcher::new(config)?);
     let robots = Arc::new(RobotsManager::new(config.user_agent.clone()));
-    let politeness = Arc::new(PolitenessManager::new(
+    let politeness = Arc::new(PolitenessManager::with_rate_limit(
         config.request_delay,
         config.per_host_concurrency,
+        config.per_host_rate,
+        config.per_host_burst,
     ));
     // Opens a host's circuit (and skips further requests to it for a
     // cooldown period) after repeated 429/403/5xx responses, instead of

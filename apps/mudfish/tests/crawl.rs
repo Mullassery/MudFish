@@ -14,6 +14,13 @@ fn args_for(url: String) -> CrawlArgs {
         max_duration_secs: Some(20),
         timeout_secs: 5,
         request_delay_ms: 0,
+        // Keep the fixture fast: these tests focus on crawl semantics, not
+        // pacing; rate limiting has its own deterministic tests.
+        per_host_rate: 0.0,
+        per_host_burst: 1,
+        max_retries: 2,
+        retry_base_ms: 10,
+        retry_max_ms: 50,
         max_response_bytes: 20 * 1024 * 1024,
         no_robots: false,
         // wiremock binds to 127.0.0.1, which the crawler's SSRF guard

@@ -1,7 +1,12 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use mudfish_core::CrawlConfig;
 use mudfish_fetch::{HttpFetcher, PolitenessManager, RobotsManager};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
+use tokio::task::JoinHandle;
 use url::Url;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -10,6 +15,14 @@ fn test_config() -> CrawlConfig {
     CrawlConfig {
         request_timeout: Duration::from_secs(5),
         max_retries: 2,
+        // Keep retry tests fast: the backoff schedule itself is unit-tested
+        // with an injected factor, so integration tests only need to prove
+        // retries happen and succeed/fail at the right time.
+        retry_base_delay: Duration::from_millis(1),
+        retry_max_delay: Duration::from_millis(5),
+        // Rate limiting has dedicated deterministic tests below; existing
+        // fetcher tests should not be paced.
+        per_host_rate: 0.0,
         // wiremock binds to 127.0.0.1, which the SSRF guard blocks by
         // design — these are trusted local test fixtures, so opt out.
         allow_private_networks: true,
@@ -55,6 +68,73 @@ async fn retries_on_503_then_succeeds() {
 
     assert_eq!(resp.status, 200);
     assert_eq!(resp.body.as_ref(), b"recovered");
+    assert_eq!(
+        server.received_requests().await.unwrap().len(),
+        2,
+        "one failed attempt plus one successful retry"
+    );
+}
+
+#[tokio::test]
+async fn retries_on_429_honoring_retry_after_then_succeeds() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/rate-limited"))
+        .respond_with(ResponseTemplate::new(429).insert_header("Retry-After", "0"))
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/rate-limited"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("after backoff"))
+        .mount(&server)
+        .await;
+
+    let fetcher = HttpFetcher::new(&test_config()).unwrap();
+    let url = Url::parse(&format!("{}/rate-limited", server.uri())).unwrap();
+    let resp = fetcher.fetch(&url).await.unwrap();
+
+    assert_eq!(resp.status, 200);
+    assert_eq!(resp.body.as_ref(), b"after backoff");
+    assert_eq!(
+        server.received_requests().await.unwrap().len(),
+        2,
+        "a 429 with Retry-After must be retried exactly once here"
+    );
+}
+
+#[tokio::test]
+async fn retry_after_zero_does_not_fall_back_to_exponential_backoff() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/retry-now"))
+        .respond_with(ResponseTemplate::new(429).insert_header("Retry-After", "0"))
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/retry-now"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+
+    // Use a deliberately long computed backoff; an honored Retry-After: 0
+    // means the retry still happens immediately rather than sleeping 5s.
+    let config = CrawlConfig {
+        retry_base_delay: Duration::from_secs(5),
+        retry_max_delay: Duration::from_secs(5),
+        ..test_config()
+    };
+    let fetcher = HttpFetcher::new(&config).unwrap();
+    let url = Url::parse(&format!("{}/retry-now", server.uri())).unwrap();
+    let started = std::time::Instant::now();
+    let resp = fetcher.fetch(&url).await.unwrap();
+
+    assert_eq!(resp.status, 200);
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "Retry-After: 0 must not be replaced with the 5s exponential backoff"
+    );
 }
 
 #[tokio::test]
@@ -66,13 +146,22 @@ async fn gives_up_after_max_retries_on_persistent_500() {
         .mount(&server)
         .await;
 
-    let fetcher = HttpFetcher::new(&test_config()).unwrap();
+    let config = CrawlConfig {
+        max_retries: 3,
+        ..test_config()
+    };
+    let fetcher = HttpFetcher::new(&config).unwrap();
     let url = Url::parse(&format!("{}/broken", server.uri())).unwrap();
     let resp = fetcher.fetch(&url).await.unwrap();
 
     // Retries exhausted: the caller still gets the last response back
     // (not an error), since a persistent 5xx is a valid, informative result.
     assert_eq!(resp.status, 500);
+    assert_eq!(
+        server.received_requests().await.unwrap().len(),
+        4,
+        "max_retries=3 means one initial attempt plus three retries"
+    );
 }
 
 #[tokio::test]
@@ -208,6 +297,125 @@ async fn politeness_manager_spaces_out_requests() {
     politeness.wait_for_slot("example.com").await;
     let elapsed = start.elapsed();
     assert!(elapsed >= Duration::from_millis(90));
+}
+
+#[tokio::test]
+async fn politeness_rate_limit_paces_concurrent_callers() {
+    // 50 req/s with burst 1: the first call is immediate, each subsequent
+    // reservation is ~20ms later. Small intervals keep this deterministic
+    // without a long sleep.
+    let politeness = PolitenessManager::with_rate_limit(Duration::ZERO, 8, 50.0, 1);
+    let start = std::time::Instant::now();
+    for _ in 0..4 {
+        politeness.wait_for_slot("rate.example").await;
+    }
+    let elapsed = start.elapsed();
+    assert!(
+        elapsed >= Duration::from_millis(50),
+        "4 requests at 50/s must take at least ~3 intervals (60ms), got {elapsed:?}"
+    );
+}
+
+struct TrackingServer {
+    base_url: String,
+    requests: Arc<AtomicUsize>,
+    max_in_flight: Arc<AtomicUsize>,
+    handle: JoinHandle<()>,
+}
+
+impl TrackingServer {
+    async fn start(response_delay: Duration) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+        let requests = Arc::new(AtomicUsize::new(0));
+        let in_flight = Arc::new(AtomicUsize::new(0));
+        let max_in_flight = Arc::new(AtomicUsize::new(0));
+
+        let handle = {
+            let requests = requests.clone();
+            let in_flight = in_flight.clone();
+            let max_in_flight = max_in_flight.clone();
+            tokio::spawn(async move {
+                loop {
+                    let Ok((mut stream, _)) = listener.accept().await else {
+                        break;
+                    };
+                    let requests = requests.clone();
+                    let in_flight = in_flight.clone();
+                    let max_in_flight = max_in_flight.clone();
+                    tokio::spawn(async move {
+                        let mut buf = [0u8; 1024];
+                        let mut request = Vec::new();
+                        loop {
+                            match stream.read(&mut buf).await {
+                                Ok(0) | Err(_) => break,
+                                Ok(n) => {
+                                    request.extend_from_slice(&buf[..n]);
+                                    if request.windows(4).any(|w| w == b"\r\n\r\n") {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        let active = in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+                        max_in_flight.fetch_max(active, Ordering::SeqCst);
+                        requests.fetch_add(1, Ordering::SeqCst);
+                        tokio::time::sleep(response_delay).await;
+                        let _ = stream
+                            .write_all(
+                                b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok",
+                            )
+                            .await;
+                        let _ = stream.shutdown().await;
+                        in_flight.fetch_sub(1, Ordering::SeqCst);
+                    });
+                }
+            })
+        };
+
+        Self {
+            base_url,
+            requests,
+            max_in_flight,
+            handle,
+        }
+    }
+}
+
+impl Drop for TrackingServer {
+    fn drop(&mut self) {
+        self.handle.abort();
+    }
+}
+
+#[tokio::test]
+async fn per_host_concurrency_cap_holds_under_real_requests() {
+    let server = TrackingServer::start(Duration::from_millis(20)).await;
+    let manager = Arc::new(PolitenessManager::new(Duration::ZERO, 2));
+    let host = Url::parse(&server.base_url)
+        .unwrap()
+        .host_str()
+        .unwrap()
+        .to_string();
+
+    let mut tasks = Vec::new();
+    for _ in 0..8 {
+        let sem = manager.host_semaphore(&host);
+        let url = format!("{}/", server.base_url);
+        tasks.push(tokio::spawn(async move {
+            let _permit = sem.acquire_owned().await.unwrap();
+            reqwest::get(&url).await.unwrap().text().await.unwrap()
+        }));
+    }
+    for task in tasks {
+        assert_eq!(task.await.unwrap(), "ok");
+    }
+
+    assert_eq!(server.requests.load(Ordering::SeqCst), 8);
+    let max = server.max_in_flight.load(Ordering::SeqCst);
+    assert!(max <= 2, "per-host concurrency cap exceeded: {max} > 2");
+    assert!(max >= 1, "server observed no in-flight requests");
 }
 
 #[tokio::test]

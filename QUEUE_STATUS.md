@@ -4,6 +4,9 @@ This file records what was shipped, what is blocked/failed, and what is rejected
 
 ## Shipped
 - Cookie sessions; CSS-selector field extraction (0.2.5).
+- Per-host token-bucket rate limiting, jittered exponential retry backoff,
+  `Retry-After` (seconds or HTTP-date), and configurable retry/base/max
+  delays with deterministic tests.
 
 ## Blocked / failed
 - Distributed crawling; browser-path SSRF parity.

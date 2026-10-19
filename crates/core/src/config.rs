@@ -20,6 +20,15 @@ pub struct CrawlConfig {
     pub deny_path_patterns: Vec<String>,
     pub request_timeout: Duration,
     pub max_retries: u32,
+    /// Base delay for the first retry after a 429/5xx/transport error.
+    /// Subsequent retries double the delay (exponential backoff) up to
+    /// `retry_max_delay`, with jitter applied so concurrent workers don't
+    /// retry in lockstep. A server-provided `Retry-After` always wins over
+    /// the computed backoff.
+    pub retry_base_delay: Duration,
+    /// Ceiling for computed exponential backoff (does not cap an explicit
+    /// `Retry-After`, which is honored as sent by the server).
+    pub retry_max_delay: Duration,
     pub max_redirects: u32,
     pub max_response_bytes: u64,
     pub max_urls: Option<u64>,
@@ -27,6 +36,15 @@ pub struct CrawlConfig {
     pub user_agent: String,
     pub respect_robots: bool,
     pub request_delay: Duration,
+    /// Sustained per-host request rate (requests per second) enforced by a
+    /// token bucket. `0` disables rate limiting. Applies on top of
+    /// `per_host_concurrency` (in-flight cap) and `request_delay` (minimum
+    /// spacing), so a host sees at most `per_host_burst` immediate requests
+    /// followed by this rate.
+    pub per_host_rate: f64,
+    /// Token-bucket burst capacity, i.e. how many requests to one host may
+    /// start back-to-back before the sustained `per_host_rate` takes over.
+    pub per_host_burst: u32,
     /// Extra headers sent with every request (e.g. `Cookie`/`Authorization`
     /// for crawling pages that require auth). Empty by default, matching
     /// plain anonymous crawling.
@@ -81,6 +99,8 @@ impl Default for CrawlConfig {
             deny_path_patterns: Vec::new(),
             request_timeout: Duration::from_secs(30),
             max_retries: 2,
+            retry_base_delay: Duration::from_millis(500),
+            retry_max_delay: Duration::from_secs(30),
             max_redirects: 10,
             max_response_bytes: 20 * 1024 * 1024,
             max_urls: Some(10_000),
@@ -91,6 +111,8 @@ impl Default for CrawlConfig {
             ),
             respect_robots: true,
             request_delay: Duration::from_millis(0),
+            per_host_rate: 2.0,
+            per_host_burst: 2,
             default_headers: Vec::new(),
             normalization: NormalizationOptions::default(),
             allow_private_networks: false,

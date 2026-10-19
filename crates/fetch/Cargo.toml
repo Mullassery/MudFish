@@ -12,6 +12,7 @@ name = "mudfish_fetch"
 [dependencies]
 bytes = "1.12.1"
 dashmap = "6.2.1"
+httpdate = "1.0.3"
 mudfish-core = { path = "../core" }
 rand = "0.10.2"
 reqwest = { version = "0.13.5", default-features = false, features = ["gzip", "brotli", "deflate", "zstd", "rustls", "http2", "cookies", "stream"] }
@@ -22,5 +23,5 @@ tracing = "0.1.44"
 url = { version = "2.5.8", features = ["serde"] }
 
 [dev-dependencies]
-tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "test-util"] }
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "test-util", "net", "io-util"] }
 wiremock = "0.6.5"

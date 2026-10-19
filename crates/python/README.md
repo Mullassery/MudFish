@@ -90,6 +90,11 @@ All keyword-only, matching the CLI's flags (also available as the `CrawlOptions`
 | `max_duration_secs` | `None` | Optional wall-clock budget |
 | `timeout_secs` | `30` | Per-request timeout |
 | `request_delay_ms` | `0` | Min delay between requests to the same host |
+| `per_host_rate` | `2.0` | Sustained requests/sec per host (token bucket); `0` disables |
+| `per_host_burst` | `2` | Per-host token-bucket burst |
+| `max_retries` | `2` | Retries after 429/5xx/transport errors |
+| `retry_base_ms` | `500` | First retry delay; doubles with jitter |
+| `retry_max_ms` | `30000` | Ceiling for computed exponential backoff |
 | `max_response_bytes` | `20 MB` | Per-response size cap |
 | `respect_robots` | `True` | Honor robots.txt |
 | `allow_private_networks` | `False` | Permit loopback/private targets (internal use only) |

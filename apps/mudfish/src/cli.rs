@@ -66,6 +66,29 @@ pub struct CrawlArgs {
     #[arg(long, default_value_t = 0)]
     pub request_delay_ms: u64,
 
+    /// Sustained requests per second allowed to a single host (token bucket).
+    /// Set to 0 to disable rate limiting.
+    #[arg(long, default_value_t = 2.0)]
+    pub per_host_rate: f64,
+
+    /// How many requests to one host may start back-to-back before the
+    /// sustained `--per-host-rate` takes over.
+    #[arg(long, default_value_t = 2)]
+    pub per_host_burst: u32,
+
+    /// Retries per URL after a 429, 5xx, or transport error.
+    #[arg(long, default_value_t = 2)]
+    pub max_retries: u32,
+
+    /// Base delay for the first retry, in milliseconds. Doubles per attempt
+    /// (with jitter) up to `--retry-max-ms`; `Retry-After` takes precedence.
+    #[arg(long, default_value_t = 500)]
+    pub retry_base_ms: u64,
+
+    /// Ceiling for computed exponential backoff, in milliseconds.
+    #[arg(long, default_value_t = 30_000)]
+    pub retry_max_ms: u64,
+
     /// Maximum size of a single response body, in bytes.
     #[arg(long, default_value_t = 20 * 1024 * 1024)]
     pub max_response_bytes: u64,

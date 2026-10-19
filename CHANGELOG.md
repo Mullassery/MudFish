@@ -10,6 +10,22 @@ breaking at any point.
 ## [Unreleased]
 
 ### Added
+- Per-host token-bucket rate limiting alongside the existing per-host
+  concurrency semaphore and minimum request spacing. Safe defaults are
+  2 requests/sec sustained with a burst of 2; configurable in Rust via
+  `CrawlConfig::per_host_rate`/`per_host_burst`, on the CLI via
+  `--per-host-rate`/`--per-host-burst`, and in Python via
+  `per_host_rate`/`per_host_burst`. `0` disables rate limiting.
+- Configurable retry policy: `retry_base_delay`/`retry_max_delay`
+  (`--retry-base-ms`/`--retry-max-ms`, Python `retry_base_ms`/`retry_max_ms`)
+  and `--max-retries`/Python `max_retries`. Backoff is exponential with
+  50–100% jitter so concurrent workers don't retry in lockstep.
+- `Retry-After` now accepts both delta-seconds and HTTP-date forms, and an
+  explicit value (including `0`) takes precedence over computed backoff.
+- Deterministic tests covering 429 + `Retry-After`, persistent 500s, retry
+  counts, token-bucket burst/pacing, bounded concurrency caps, and
+  per-host semaphore isolation, all using sub-10ms delays or pure virtual
+  time (no long sleeps).
 - `mudfish.extract_fields(html, schema)`: CSS-selector field extraction in the
   Rust parser, exposed through the Python bindings. Invalid selectors return an
   empty list for that field rather than failing the call. Python `0.2.5`,

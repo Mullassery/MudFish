@@ -1835,6 +1835,7 @@ version = "0.1.5"
 dependencies = [
  "bytes",
  "dashmap",
+ "httpdate",
  "mudfish-core",
  "rand 0.10.2",
  "reqwest 0.13.5",
