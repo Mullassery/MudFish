@@ -10,7 +10,7 @@ description = "Headless-Chrome (CDP) rendering fallback for pages that need Java
 name = "mudfish_browser"
 
 [dependencies]
-chromiumoxide = "0.7"
+chromiumoxide = "0.9"
 futures = "0.3"
 mudfish-core = { path = "../core" }
 thiserror = "2.0.20"
