@@ -108,6 +108,11 @@ pub struct CrawlArgs {
     #[arg(long)]
     pub chrome_path: Option<std::path::PathBuf>,
 
+    /// Persistent frontier SQLite path. When set, a crashed/interrupted crawl
+    /// resumes queued URLs instead of starting over.
+    #[arg(long)]
+    pub frontier_state: Option<PathBuf>,
+
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Summary)]
     pub output: OutputFormat,

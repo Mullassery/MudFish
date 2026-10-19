@@ -26,6 +26,7 @@ fn build_config(args: &CrawlArgs) -> anyhow::Result<CrawlConfig> {
             .chrome_path
             .as_ref()
             .map(|p| p.to_string_lossy().into_owned()),
+        frontier_state: args.frontier_state.clone(),
         max_urls: Some(args.max_urls),
         max_duration: args.max_duration_secs.map(Duration::from_secs),
         ..CrawlConfig::default()

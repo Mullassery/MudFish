@@ -24,6 +24,7 @@ fn args_for(url: String) -> CrawlArgs {
         proxy: Vec::new(),
         proxy_rotate_after: 50,
         chrome_path: None,
+        frontier_state: None,
         output: OutputFormat::Json,
         out_file: None,
     }

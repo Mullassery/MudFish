@@ -119,10 +119,15 @@ pub async fn crawl(config: &CrawlConfig) -> anyhow::Result<CrawlResult> {
     // full breaker semantics. This is "detect -> slow down -> cool down",
     // never an attempt to get around whatever is blocking the crawler.
     let health = Arc::new(DomainHealthTracker::default());
-    let frontier = Arc::new(Frontier::new(
-        Box::new(DepthPriority),
-        config.normalization.clone(),
-    ));
+    let frontier = Arc::new(match &config.frontier_state {
+        Some(path) => {
+            Frontier::with_store(Box::new(DepthPriority), config.normalization.clone(), path)
+                .map_err(|e| {
+                    anyhow::anyhow!("cannot open frontier state {}: {e}", path.display())
+                })?
+        }
+        None => Frontier::new(Box::new(DepthPriority), config.normalization.clone()),
+    });
 
     frontier.try_push(seed.clone(), 0, None);
 

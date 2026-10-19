@@ -58,6 +58,18 @@ cargo build --release
 ./target/release/mudfish crawl https://example.com --depth 2 --output json
 ```
 
+## Resumable crawls
+
+Long crawls can survive process restarts with a SQLite-backed frontier:
+
+```bash
+mudfish crawl https://example.com --frontier-state ~/.mudfish/example.sqlite
+```
+
+Queued URLs and the seen-set are persisted. If the process dies while a URL is
+in flight, that lease is requeued on the next run instead of being lost or
+silently skipped. Without `--frontier-state` the frontier remains in memory.
+
 ## Quick start
 
 ```python

@@ -9,6 +9,8 @@ use url::Url;
 
 use crate::item::FrontierItem;
 use crate::scheduler::PriorityScorer;
+use crate::store::FrontierStore;
+use std::path::Path;
 
 /// The URL frontier: a priority queue plus URL-level dedup and a termination
 /// signal for a pool of concurrent workers.
@@ -29,6 +31,7 @@ pub struct Frontier {
     stopped: AtomicBool,
     scorer: Box<dyn PriorityScorer>,
     normalization: NormalizationOptions,
+    store: Option<Mutex<FrontierStore>>,
 }
 
 impl Frontier {
@@ -42,7 +45,51 @@ impl Frontier {
             stopped: AtomicBool::new(false),
             scorer,
             normalization,
+            store: None,
         }
+    }
+
+    /// Open a persistent SQLite-backed frontier and restore queued work.
+    ///
+    /// In-flight leases from a previous process are requeued on startup, so a
+    /// crash resumes rather than losing work. `try_push`/`pop`/`complete`
+    /// mirror their state to the database; a write failure leaves the crawl
+    /// running in memory but is reported on stderr.
+    pub fn with_store(
+        scorer: Box<dyn PriorityScorer>,
+        normalization: NormalizationOptions,
+        path: &Path,
+    ) -> rusqlite::Result<Self> {
+        let store = FrontierStore::open(path)?;
+        let (seen, items, max_seq) = store.load()?;
+        let visited = DashSet::new();
+        for fingerprint in seen {
+            visited.insert(fingerprint);
+        }
+        let mut queue = BinaryHeap::new();
+        let mut pending = 0i64;
+        for item in items {
+            let seq = item.seq;
+            queue.push(FrontierItem {
+                url: item.url,
+                depth: item.depth,
+                discovered_from: item.discovered_from,
+                priority: item.priority,
+                seq,
+            });
+            pending += 1;
+        }
+        Ok(Self {
+            queue: Mutex::new(queue),
+            visited,
+            pending: AtomicI64::new(pending),
+            seq: AtomicU64::new(max_seq.saturating_add(1)),
+            notify: Notify::new(),
+            stopped: AtomicBool::new(false),
+            scorer,
+            normalization,
+            store: Some(Mutex::new(store)),
+        })
     }
 
     /// Normalizes and fingerprints `url`; if it has not been seen before,
@@ -64,6 +111,15 @@ impl Frontier {
             priority,
             seq,
         };
+
+        if let Some(store) = &self.store {
+            let store = store
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if let Err(error) = store.mark_seen(fp).and_then(|_| store.enqueue(fp, &item)) {
+                eprintln!("mudfish frontier persistence error (enqueue): {error}");
+            }
+        }
 
         self.pending.fetch_add(1, Ordering::SeqCst);
         // Recover from poisoning rather than propagate it: a worker
@@ -102,6 +158,15 @@ impl Frontier {
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .pop()
             {
+                if let Some(store) = &self.store {
+                    let fp = fingerprint(&item.url);
+                    let store = store
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    if let Err(error) = store.mark_inflight(fp) {
+                        eprintln!("mudfish frontier persistence error (lease): {error}");
+                    }
+                }
                 return Some(item);
             }
 
@@ -130,7 +195,15 @@ impl Frontier {
     /// Marks a previously popped item as fully processed. Must be called
     /// exactly once per item returned by `pop`, and only after any children
     /// it discovered have already been pushed.
-    pub fn complete(&self, _item: &FrontierItem) {
+    pub fn complete(&self, item: &FrontierItem) {
+        if let Some(store) = &self.store {
+            let store = store
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if let Err(error) = store.complete(fingerprint(&item.url)) {
+                eprintln!("mudfish frontier persistence error (complete): {error}");
+            }
+        }
         let remaining = self.pending.fetch_sub(1, Ordering::SeqCst) - 1;
         if remaining == 0 {
             self.notify.notify_waiters();
@@ -293,5 +366,45 @@ mod tests {
             out.push(h.await.unwrap());
         }
         out
+    }
+    #[tokio::test]
+    async fn persistent_frontier_resumes_queued_and_inflight_work() {
+        let dir =
+            std::env::temp_dir().join(format!("mudfish-frontier-persist-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("frontier.sqlite");
+
+        let seed = Url::parse("https://example.com/").unwrap();
+        let child = Url::parse("https://example.com/child").unwrap();
+        {
+            let frontier = Frontier::with_store(
+                Box::new(DepthPriority),
+                NormalizationOptions::default(),
+                &db,
+            )
+            .unwrap();
+            assert!(frontier.try_push(seed.clone(), 0, None));
+            assert!(frontier.try_push(child.clone(), 1, Some(seed.clone())));
+            let _leased = frontier.pop().await.unwrap();
+            // Drop without complete: simulate a crash with an in-flight lease.
+        }
+
+        {
+            let frontier = Frontier::with_store(
+                Box::new(DepthPriority),
+                NormalizationOptions::default(),
+                &db,
+            )
+            .unwrap();
+            // Both the leased seed and the queued child are recovered.
+            assert_eq!(frontier.pending(), 2);
+            assert!(!frontier.try_push(seed.clone(), 0, None));
+            let recovered = frontier.pop().await.unwrap();
+            assert_eq!(recovered.url, seed);
+            frontier.complete(&recovered);
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

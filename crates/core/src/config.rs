@@ -61,6 +61,10 @@ pub struct CrawlConfig {
     /// chromiumoxide's host autodetection (including `$CHROME`). Bundled
     /// distributions point this at the binary shipped inside the package.
     pub chrome_path: Option<String>,
+    /// Optional SQLite path for a persistent frontier. When set, queued URLs
+    /// and the seen-set survive process restarts; in-flight leases from a
+    /// crash are requeued on startup. `None` keeps the in-memory frontier.
+    pub frontier_state: Option<std::path::PathBuf>,
 }
 
 impl Default for CrawlConfig {
@@ -95,6 +99,7 @@ impl Default for CrawlConfig {
             proxies: Vec::new(),
             proxy_rotate_after: 50,
             chrome_path: None,
+            frontier_state: None,
         }
     }
 }
