@@ -10,6 +10,13 @@ breaking at any point.
 ## [Unreleased]
 
 ### Added
+- `mudfish.extract_fields(html, schema)`: CSS-selector field extraction in the
+  Rust parser, exposed through the Python bindings. Invalid selectors return an
+  empty list for that field rather than failing the call. Python `0.2.5`,
+  Rust workspace `0.1.5`.
+
+
+### Added
 - HTTP fetcher now enables a per-crawler cookie store, so `Set-Cookie` values
   from a login/session response are sent on subsequent requests. Manual
   `Cookie`/`Authorization` headers still work via `default_headers`; no login

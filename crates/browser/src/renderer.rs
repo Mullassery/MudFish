@@ -185,7 +185,9 @@ impl BrowserRenderer {
                 break;
             }
             let since_activity = elapsed.as_millis() as u64
-                - last_activity_ms.load(Ordering::Relaxed).min(elapsed.as_millis() as u64);
+                - last_activity_ms
+                    .load(Ordering::Relaxed)
+                    .min(elapsed.as_millis() as u64);
             if elapsed >= quiet && since_activity >= quiet.as_millis() as u64 {
                 break;
             }

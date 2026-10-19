@@ -32,6 +32,7 @@ Mudfish is a fast, safety-conscious asynchronous web crawler built in Rust and e
 
 - **Not a browser-first scraper.** JS rendering is opt-in and off by default; it has not been benchmarked and requires a Chrome/Chromium binary on the host.
 - **Not the full platform yet.** Structured/AI extraction, website graphs, distributed crawling, and MCP/agent tooling are **not implemented** (that's later-phase work — the roadmap deliberately refuses to build them before the HTTP core is solid).
+- **Selector-based extraction** — `mudfish.extract_fields(html, {"title": "h1", "price": ".price"})` returns trimmed matches per field. This is extraction, not a full schema/LLM pipeline.
 - **Session support is manual.** `default_headers` can carry `Cookie`/`Authorization`, and the HTTP fetcher now persists `Set-Cookie` values across requests in one crawler instance. There is no login-form automation, CSRF handling, or cookie import/export; HTTP/3 is compiled in but untested.
 - **Not load-tested at scale.** Large-crawl memory/CPU behavior (thousands of pages) has not been profiled.
 - **Early-stage and single-maintainer.** Phase 1 only; not "production-ready" in the sense of at-scale operation, load testing, or independent security review. Distribution is from the maintainer's machine (single-platform wheels — check PyPI for platform coverage; others build from source).

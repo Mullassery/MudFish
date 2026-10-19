@@ -36,10 +36,12 @@ from pathlib import Path
 from typing import Any, Iterator, Mapping, Optional
 
 from ._mudfish import crawl as _crawl
+from ._mudfish import extract_fields
 
 __all__ = [
     "crawl",
     "crawl_dict",
+    "extract_fields",
     "crawl_async",
     "Crawler",
     "CrawlOptions",
@@ -55,7 +57,7 @@ __all__ = [
     "CrawlFailedError",
 ]
 
-__version__ = "0.2.4"
+__version__ = "0.2.5"
 
 
 def bundled_chrome_path() -> Optional[str]:

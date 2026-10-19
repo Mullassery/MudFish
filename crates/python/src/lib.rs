@@ -87,8 +87,21 @@ fn crawl<'py>(
     Ok(pythonize::pythonize(py, &result)?)
 }
 
+/// Extract named fields from HTML using CSS selectors.
+///
+/// `schema` is a dict of field name -> CSS selector. Returns field name ->
+/// list of trimmed text matches.
+#[pyfunction]
+fn extract_fields(
+    html: &str,
+    schema: std::collections::BTreeMap<String, String>,
+) -> PyResult<std::collections::BTreeMap<String, Vec<String>>> {
+    Ok(mudfish_parser::extract_fields(html, &schema))
+}
+
 #[pymodule]
 fn _mudfish(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(crawl, m)?)?;
+    m.add_function(wrap_pyfunction!(extract_fields, m)?)?;
     Ok(())
 }

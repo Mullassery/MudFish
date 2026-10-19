@@ -13,6 +13,30 @@ pub struct ParsedPage {
 /// Parses an HTML document, resolving every discovered link and the
 /// canonical URL against `base_url`. Non-http(s) schemes (`mailto:`,
 /// `javascript:`, `tel:`, ...) are dropped — they are not crawlable.
+/// Extract named fields from HTML using caller-supplied CSS selectors.
+///
+/// Returns every match's trimmed text for each field name. Invalid selectors
+/// yield an empty list for that field rather than failing the whole call.
+pub fn extract_fields(
+    html: &str,
+    selectors: &std::collections::BTreeMap<String, String>,
+) -> std::collections::BTreeMap<String, Vec<String>> {
+    let document = Html::parse_document(html);
+    let mut out = std::collections::BTreeMap::new();
+    for (name, selector_str) in selectors {
+        let values = match Selector::parse(selector_str) {
+            Ok(selector) => document
+                .select(&selector)
+                .map(|element| element.text().collect::<String>().trim().to_string())
+                .filter(|value| !value.is_empty())
+                .collect(),
+            Err(_) => Vec::new(),
+        };
+        out.insert(name.clone(), values);
+    }
+    out
+}
+
 pub fn parse_html(html: &str, base_url: &Url) -> ParsedPage {
     let document = Html::parse_document(html);
 
@@ -273,5 +297,28 @@ mod tests {
     fn does_not_flag_sparse_page_with_no_script_at_all() {
         let no_script = "<html><body><img src=\"/hero.jpg\"></body></html>";
         assert!(!static_html_looks_js_dependent(no_script));
+    }
+}
+
+#[cfg(test)]
+mod extraction_tests {
+    use super::*;
+
+    #[test]
+    fn extracts_named_css_fields() {
+        let html = r#"<html><body><h1>Title</h1><span class="price"> $10 </span><span class="price">$12</span></body></html>"#;
+        let selectors = std::collections::BTreeMap::from([
+            ("title".to_string(), "h1".to_string()),
+            ("price".to_string(), ".price".to_string()),
+        ]);
+        let fields = extract_fields(html, &selectors);
+        assert_eq!(fields["title"], vec!["Title"]);
+        assert_eq!(fields["price"], vec!["$10", "$12"]);
+    }
+
+    #[test]
+    fn invalid_selector_is_empty_not_fatal() {
+        let selectors = std::collections::BTreeMap::from([("bad".to_string(), ":::".to_string())]);
+        assert!(extract_fields("<p>x</p>", &selectors)["bad"].is_empty());
     }
 }
