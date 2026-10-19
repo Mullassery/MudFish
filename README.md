@@ -151,6 +151,11 @@ from ≤0.1.2 must pass `launch(None)` to keep using host Chrome.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — build/test setup and what a good PR looks like
 - [SECURITY.md](SECURITY.md) — security posture and how to report a vulnerability
 
+## Queue status
+
+Shipped, blocked/failed, and rejected work for this repository is documented in
+[`QUEUE_STATUS.md`](QUEUE_STATUS.md).
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Security issues: see [SECURITY.md](SECURITY.md) — please don't file those as public issues. Behavior changes are tracked in [CHANGELOG.md](CHANGELOG.md).
