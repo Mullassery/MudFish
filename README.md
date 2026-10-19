@@ -151,6 +151,16 @@ from ≤0.1.2 must pass `launch(None)` to keep using host Chrome.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — build/test setup and what a good PR looks like
 - [SECURITY.md](SECURITY.md) — security posture and how to report a vulnerability
 
+## Known issues and deferred work
+
+**Blocked / failed:**
+- Distributed crawling; browser-path SSRF parity.
+
+**Rejected / deferred:**
+- Distributed crawling now.
+
+Full shipped/blocked/rejected detail: [`QUEUE_STATUS.md`](QUEUE_STATUS.md).
+
 ## Queue status
 
 Shipped, blocked/failed, and rejected work for this repository is documented in
