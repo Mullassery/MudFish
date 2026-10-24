@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Before filing: check `README.md` and `ROADMAP_HONEST.md` first — a lot of
+        Before filing: check `README.md` and `docs/internal/ROADMAP_HONEST.md` first — a lot of
         features (browser rendering, structured extraction, distributed crawling,
         persistence) are simply not built yet, not bugs.
 

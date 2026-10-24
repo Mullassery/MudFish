@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Check `ROADMAP_HONEST.md` first — if this is browser rendering, structured/AI
+        Check `docs/internal/ROADMAP_HONEST.md` first — if this is browser rendering, structured/AI
         extraction, distributed crawling, persistence, or an API/MCP server, it's
         already a known, intentionally-deferred future phase rather than a gap
         nobody thought of. Still worth filing if you want to argue for reprioritizing
