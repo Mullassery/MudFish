@@ -11,7 +11,7 @@ Companion: `docs/architecture/reference-capability-gap-analysis.md`
 ## 1. Context
 
 Mudfish is a Rust-native, chromiumoxide- and reqwest-based crawler whose long-term
-roadmap (ROADMAP_HONEST.md) leads toward structured extraction, website graphs, and
+roadmap (../internal/ROADMAP_HONEST.md) leads toward structured extraction, website graphs, and
 agent tooling. Two reference projects (Scrapling, PixelRAG) were studied to identify
 capabilities worth implementing natively:
 

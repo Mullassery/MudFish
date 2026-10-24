@@ -2,7 +2,7 @@
 
 Python bindings for [Mudfish Crawler](https://github.com/Mullassery/MudFish), a Rust-native web crawling and intelligence engine.
 
-This package wraps the Rust crawl engine directly (via [PyO3](https://pyo3.rs)) — there is no subprocess or network hop to a separate server. It exposes a typed, Pythonic API over the engine; the Rust project itself is at an early stage (see the main repo's `ROADMAP_HONEST.md` for full status).
+This package wraps the Rust crawl engine directly (via [PyO3](https://pyo3.rs)) — there is no subprocess or network hop to a separate server. It exposes a typed, Pythonic API over the engine; the Rust project itself is at an early stage (see the main repo's `../../docs/internal/ROADMAP_HONEST.md` for full status).
 
 ## Install
 

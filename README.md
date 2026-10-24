@@ -39,7 +39,7 @@ Mudfish is a fast, safety-conscious asynchronous web crawler built in Rust and e
 
 ## Project status
 
-`mudfish` 0.2.3 on PyPI, Rust workspace `0.1.3` (git tag `rust-v0.1.3` for downstream consumers). Phase 1 (HTTP crawler + opt-in browser rendering) is built and verified by 100+ Rust tests plus 4 Python-binding tests, and manually validated against live sites (example.com, rust-lang.org). In a head-to-head benchmark against Scrapy 2.13.4 on the same live site it was ~1.3x faster at equal scope. See [ROADMAP_HONEST.md](ROADMAP_HONEST.md) for the full honest breakdown of built/verified/broken.
+`mudfish` 0.2.3 on PyPI, Rust workspace `0.1.3` (git tag `rust-v0.1.3` for downstream consumers). Phase 1 (HTTP crawler + opt-in browser rendering) is built and verified by 100+ Rust tests plus 4 Python-binding tests, and manually validated against live sites (example.com, rust-lang.org). In a head-to-head benchmark against Scrapy 2.13.4 on the same live site it was ~1.3x faster at equal scope. See [docs/internal/ROADMAP_HONEST.md](docs/internal/ROADMAP_HONEST.md) for the full honest breakdown of built/verified/broken.
 
 ## Installation
 
@@ -164,7 +164,7 @@ from ≤0.1.2 must pass `launch(None)` to keep using host Chrome.
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) — workspace layout and the reasoning behind the key design decisions (frontier termination, SSRF resolver, same-domain scoping)
 - [crates/python/README.md](crates/python/README.md) — full Python API reference, object table, and limitations
-- [ROADMAP_HONEST.md](ROADMAP_HONEST.md) — status buckets, what's verified, what's known-broken or missing
+- [docs/internal/ROADMAP_HONEST.md](docs/internal/ROADMAP_HONEST.md) — status buckets, what's verified, what's known-broken or missing
 - [CONTRIBUTING.md](CONTRIBUTING.md) — build/test setup and what a good PR looks like
 - [SECURITY.md](SECURITY.md) — security posture and how to report a vulnerability
 
@@ -176,7 +176,7 @@ from ≤0.1.2 must pass `launch(None)` to keep using host Chrome.
 **Rejected / deferred:**
 - Distributed crawling now.
 
-Full shipped/blocked/rejected detail: [`QUEUE_STATUS.md`](QUEUE_STATUS.md).
+Full shipped/blocked/rejected detail: [`docs/internal/QUEUE_STATUS.md`](docs/internal/QUEUE_STATUS.md).
 
 ## Contributing
 

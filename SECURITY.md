@@ -6,7 +6,7 @@ Please report security issues privately via
 [GitHub Security Advisories](https://github.com/Mullassery/MudFish/security/advisories/new)
 for this repository, rather than opening a public issue.
 
-This is a single-maintainer, early-stage project (see `ROADMAP_HONEST.md`).
+This is a single-maintainer, early-stage project (see `docs/internal/ROADMAP_HONEST.md`).
 There is no formal SLA on response time — best-effort, but realistically
 expect days, not hours.
 
@@ -35,7 +35,7 @@ expect days, not hours.
 
 - No dependency vulnerability scanning is currently wired into CI (no
   `cargo audit` / `cargo deny` / `pip-audit` step). This is a real gap — see
-  `ROADMAP_HONEST.md` for the full technical-debt list.
+  `docs/internal/ROADMAP_HONEST.md` for the full technical-debt list.
 - No fuzzing (HTML parser, URL normalization, robots.txt parsing).
 - Authentication/session/cookie-based crawling is untested — see the main
   README's "What's built but not verified" section.

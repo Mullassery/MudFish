@@ -117,7 +117,7 @@ breaking at any point.
   `CODE_OF_CONDUCT.md`, this changelog, GitHub issue/PR templates, and a
   `.github/workflows/ci.yml` running `cargo fmt`/`clippy`/`test` plus a
   separate `maturin`/`pytest` job for the Python bindings. None of this
-  existed before — `ROADMAP_HONEST.md` previously stated "no CI configured
+  existed before — `docs/internal/ROADMAP_HONEST.md` previously stated "no CI configured
   yet," and that was true until now.
 - `.github/dependabot.yml` for Cargo, pip (`crates/python`), and GitHub
   Actions dependency updates.
@@ -161,9 +161,9 @@ intentional; a future release should tag the commit it's built from.
   on PyPI): `mudfish.crawl()` exposing the same engine as a synchronous,
   blocking native extension.
 - 40 Rust tests and 4 Python tests, all passing as of this writing (see
-  `README.md` and `ROADMAP_HONEST.md` for exactly what each covers).
+  `README.md` and `docs/internal/ROADMAP_HONEST.md` for exactly what each covers).
 
-### Known limitations (see `ROADMAP_HONEST.md` for the full list)
+### Known limitations (see `docs/internal/ROADMAP_HONEST.md` for the full list)
 - No CI was configured at the time of this release (fixed under
   `[Unreleased]` above).
 - No load testing at scale; no HTTP/3, cookie/session, or eTLD+1 subdomain

@@ -1,7 +1,7 @@
 # Contributing to Mudfish
 
 This is a young, single-maintainer project (Phase 1 of a much larger planned
-scope — see `ROADMAP_HONEST.md`). Contributions are welcome, but read that
+scope — see `docs/internal/ROADMAP_HONEST.md`). Contributions are welcome, but read that
 file before proposing a large feature: most obvious-seeming gaps (browser
 rendering, structured/LLM extraction, distributed crawling, a storage layer,
 an MCP/agent server) are deliberately not built yet, not overlooked.
@@ -73,7 +73,7 @@ cd crates/python && pytest tests/ -v
 ## Honesty in docs and comments
 
 This project is deliberately blunt about what is and isn't built
-(`README.md`, `ROADMAP_HONEST.md`). If your change makes something partially
+(`README.md`, `docs/internal/ROADMAP_HONEST.md`). If your change makes something partially
 work, document the actual limitation plainly — not as "may need
 improvement" or "future work," but as what specifically doesn't work yet.
 Don't leave stub/placeholder code that looks like it works but doesn't;

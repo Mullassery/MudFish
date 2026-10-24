@@ -1,6 +1,6 @@
 # Architecture
 
-This document covers what's actually built (Phase 1 — see `ROADMAP_HONEST.md`), not the full platform vision. It explains *why* the non-obvious decisions were made, since that's the part that doesn't survive re-reading the code alone.
+This document covers what's actually built (Phase 1 — see `docs/internal/ROADMAP_HONEST.md`), not the full platform vision. It explains *why* the non-obvious decisions were made, since that's the part that doesn't survive re-reading the code alone.
 
 ## Workspace layout
 
@@ -33,7 +33,7 @@ Originally, the crawl orchestration loop (worker pool, frontier wiring, same-dom
 
 `crates/python` is a PyO3 `cdylib` (via `maturin`, mixed-layout: `python/mudfish/__init__.py` is a thin Python wrapper around the native `_mudfish` extension module) exposing one function, `crawl()`. Two decisions worth explaining:
 
-- **Native extension, not a REST client.** The original brief's own phasing puts a REST/gRPC server at Phase 7, which doesn't exist yet — a thin HTTP client has nothing to talk to. A PyO3 extension was the only viable option today, not a stopgap chosen over a "better" option; the REST-client path (`ROADMAP_HONEST.md`'s originally-deferred plan) is still worth revisiting once Phase 7 exists, since it would decouple Python releases from the Rust build toolchain.
+- **Native extension, not a REST client.** The original brief's own phasing puts a REST/gRPC server at Phase 7, which doesn't exist yet — a thin HTTP client has nothing to talk to. A PyO3 extension was the only viable option today, not a stopgap chosen over a "better" option; the REST-client path (`docs/internal/ROADMAP_HONEST.md`'s originally-deferred plan) is still worth revisiting once Phase 7 exists, since it would decouple Python releases from the Rust build toolchain.
 - **Blocking, not `asyncio`-integrated.** `crawl()` calls `Python::detach` (PyO3 0.29's renamed `allow_threads`) to release the GIL, then creates its own single-use `tokio::runtime::Runtime` and blocks on it. This means other Python threads keep running during a crawl, but there's no way to `await` it from an async Python caller. Bridging into `asyncio` properly (via `pyo3-async-runtimes` or similar) is a real but separable piece of work, deferred until there's a concrete caller who needs it.
 - **`CrawlResult` → Python dict via `pythonize`**, not hand-written `IntoPyObject` implementations. `CrawlResult` is already `Serialize`; `pythonize::pythonize` converts any serializable value into the equivalent Python object graph in one call. Hand-writing the conversion for every nested struct (`Page`, `PageMetadata`, `Link`, `CrawlStats`, ...) would be pure boilerplate that drifts out of sync every time a field is added on the Rust side.
 
@@ -60,7 +60,7 @@ This is opt-out, not opt-in: `CrawlConfig::allow_private_networks` (default `fal
 
 `same_domain` filtering has to compare a discovered link's host against *something*. The naive choice — the host string the user typed on the command line — breaks the moment the seed itself redirects (very common: `www.example.com` → `example.com`). Every link on the real page would then compare against the wrong host and get filtered out as "cross-domain," silently reducing a crawl to a single page.
 
-`crates/engine/src/lib.rs` instead tracks `scope_host` as an `Arc<RwLock<String>>`, initialized to the seed's literal host, and updates it once — when the seed (depth 0) finishes fetching — to the *resolved* (`final_url`) host, via the `update_scope_host`/`read_scope_host` helpers (added 2026-09-22 alongside a poisoned-lock recovery fix — see `ROADMAP_HONEST.md`'s Technical debt section). This update is race-free without any special synchronization because no depth-1 item can exist in the frontier until the seed has been processed at least once; by the time any other worker reads `scope_host` to filter its own discovered links, the seed's update (if any) has already happened.
+`crates/engine/src/lib.rs` instead tracks `scope_host` as an `Arc<RwLock<String>>`, initialized to the seed's literal host, and updates it once — when the seed (depth 0) finishes fetching — to the *resolved* (`final_url`) host, via the `update_scope_host`/`read_scope_host` helpers (added 2026-09-22 alongside a poisoned-lock recovery fix — see `docs/internal/ROADMAP_HONEST.md`'s Technical debt section). This update is race-free without any special synchronization because no depth-1 item can exist in the frontier until the seed has been processed at least once; by the time any other worker reads `scope_host` to filter its own discovered links, the seed's update (if any) has already happened.
 
 This was found by manual testing against `rust-lang.org` (which redirects `www` → apex) after the automated test suite had already gone green on synthetic fixtures — a reminder that the synthetic test suite doesn't automatically cover every real-world HTTP quirk. A regression test (`same_domain_scoping_follows_seed_redirect` in `apps/mudfish/tests/crawl.rs`) now covers it directly.
 

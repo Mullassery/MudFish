@@ -82,7 +82,7 @@ not fully confirmed in source, **U** = could not verify. See §5 for the full cl
 | Reference source | `fetchers/chrome.py`, `fetchers/stealth_chrome.py`; docs `fetching/{dynamic,stealthy}.md` (V/D) |
 | Mudfish today | `mudfish_browser::BrowserRenderer` (chromiumoxide, headless Chrome, CDP) triggered by `mudfish_parser::static_html_looks_js_dependent`, opt-in via `render_js` — crates/browser/src/renderer.rs, crates/engine/src/lib.rs. SSRF hardening is a documented partial (TOCTOU pre-check; root isn't fully closed). |
 | Classification | **partial** (renderer real; stealth/identity-rotation is an explicit non-goal for Mudfish) |
-| Proposed native implementation | None required now; future work is closing the DNS-pinning gap (already disclosed in ROADMAP_HONEST.md). |
+| Proposed native implementation | None required now; future work is closing the DNS-pinning gap (already disclosed in ../internal/ROADMAP_HONEST.md). |
 | Priority | P4+ (deferred, disclosed) |
 
 ### 1.6 Crawl frontier management & scheduling
