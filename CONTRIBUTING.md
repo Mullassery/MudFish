@@ -21,7 +21,7 @@ Requires a recent stable Rust toolchain (developed against 1.97) and, for
 the Python bindings, Python >= 3.9 and [`maturin`](https://www.maturin.rs/).
 
 ```bash
-git clone https://github.com/Mullassery/MudFish.git
+git clone ../MudFish
 cd MudFish
 cargo build --workspace --exclude mudfish-python
 ```

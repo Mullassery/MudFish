@@ -2,7 +2,7 @@
 
 A Rust-native web crawling and intelligence engine — deterministic crawling first, browser rendering only when required, AI reasoning only when useful.
 
-[![CI](https://github.com/Mullassery/MudFish/actions/workflows/ci.yml/badge.svg)](https://github.com/Mullassery/MudFish/actions/workflows/ci.yml)
+[![CI](../MudFish/actions/workflows/ci.yml/badge.svg)](../MudFish/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![mudfish on PyPI](https://img.shields.io/pypi/v/mudfish.svg?label=mudfish)](https://pypi.org/project/mudfish/)
 
@@ -52,7 +52,7 @@ pip install mudfish
 **Rust CLI** (requires a recent stable Rust toolchain):
 
 ```bash
-git clone https://github.com/Mullassery/MudFish.git
+git clone ../MudFish
 cd MudFish
 cargo build --release
 ./target/release/mudfish crawl https://example.com --depth 2 --output json
@@ -184,13 +184,13 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Security issues: see [SECURITY.md](SECUR
 
 ## Related projects
 
-- [PrismNote](https://github.com/Mullassery/prismnote) — Jupyter-compatible data-science notebook; a natural destination for crawl results headed into pandas or RAG
-- [PyReverseETL](https://github.com/Mullassery/PyReverseETL) — quality-validated data activation with audit trail and lineage, for moving collected data where it's needed
-- [PyStreamMCP](https://github.com/Mullassery/PyStreamMCP) — intelligence layer for AI agents: query planning, context discovery, cost optimization
-- [PyAPICheck](https://github.com/Mullassery/PyAPICheck) — transparent API security discovery with real-traffic cross-referencing, a sibling security/observation tool
-- [MessageBirds](https://github.com/Mullassery/MessageBirds) — open-source, event-driven Customer Data & Engagement Platform (Rust + TypeScript)
+- [PrismNote](../prismnote) — Jupyter-compatible data-science notebook; a natural destination for crawl results headed into pandas or RAG
+- [PyReverseETL](../PyReverseETL) — quality-validated data activation with audit trail and lineage, for moving collected data where it's needed
+- [PyStreamMCP](../PyStreamMCP) — intelligence layer for AI agents: query planning, context discovery, cost optimization
+- [PyAPICheck](../PyAPICheck) — transparent API security discovery with real-traffic cross-referencing, a sibling security/observation tool
+- [MessageBirds](../MessageBirds) — open-source, event-driven Customer Data & Engagement Platform (Rust + TypeScript)
 
-[Browse all projects →](https://github.com/Mullassery?tab=repositories)
+[Browse all projects →](../Mullassery-profile)
 
 ## License
 

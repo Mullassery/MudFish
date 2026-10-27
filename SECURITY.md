@@ -3,7 +3,7 @@
 ## Reporting a vulnerability
 
 Please report security issues privately via
-[GitHub Security Advisories](https://github.com/Mullassery/MudFish/security/advisories/new)
+[GitHub Security Advisories](../MudFish/security/advisories/new)
 for this repository, rather than opening a public issue.
 
 This is a single-maintainer, early-stage project (see `docs/internal/ROADMAP_HONEST.md`).

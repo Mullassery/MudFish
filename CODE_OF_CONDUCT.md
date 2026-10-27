@@ -41,7 +41,7 @@ project in public spaces.
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
 reported by opening a private
-[GitHub Security Advisory](https://github.com/Mullassery/MudFish/security/advisories/new)
+[GitHub Security Advisory](../MudFish/security/advisories/new)
 or contacting the maintainer directly through their GitHub profile. All
 complaints will be reviewed and investigated.
 
